@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.thunderid.Quickstart"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
@@ -34,6 +34,11 @@ android {
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {

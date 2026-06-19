@@ -1,9 +1,33 @@
+/*
+ * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
+ *
+ * WSO2 LLC. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package dev.thunderid.android
 
 import dev.thunderid.android.auth.FlowExecutionClient
 import dev.thunderid.android.http.HttpClient
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 
@@ -20,47 +44,53 @@ class ThunderIDClientTest {
     // Initialization
 
     @Test
-    fun `initialize succeeds with valid https config`() = runTest {
-        val config = ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test")
-        assertTrue(client.initialize(config, storage))
-    }
-
-    @Test(expected = IAMException::class)
-    fun `initialize rejects http baseUrl`() = runTest {
-        val config = ThunderIDConfig(baseUrl = "http://localhost:8090", clientId = "test")
-        client.initialize(config, storage)
-    }
-
-    @Test(expected = IAMException::class)
-    fun `initialize throws when called twice`() = runTest {
-        val config = ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test")
-        client.initialize(config, storage)
-        client.initialize(config, storage) // should throw ALREADY_INITIALIZED
-    }
-
-    @Test
-    fun `operations before init throw SDK_NOT_INITIALIZED`() = runTest {
-        try {
-            client.isSignedIn()
-            fail("Expected IAMException")
-        } catch (e: IAMException) {
-            assertEquals(IAMErrorCode.SDK_NOT_INITIALIZED, e.code)
+    fun `initialize succeeds with valid https config`() =
+        runTest {
+            val config = ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test")
+            assertTrue(client.initialize(config, storage))
         }
-    }
+
+    @Test(expected = IAMException::class)
+    fun `initialize rejects http baseUrl`() =
+        runTest {
+            val config = ThunderIDConfig(baseUrl = "http://localhost:8090", clientId = "test")
+            client.initialize(config, storage)
+        }
+
+    @Test(expected = IAMException::class)
+    fun `initialize throws when called twice`() =
+        runTest {
+            val config = ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test")
+            client.initialize(config, storage)
+            client.initialize(config, storage) // should throw ALREADY_INITIALIZED
+        }
 
     @Test
-    fun `getConfiguration returns config after init`() = runTest {
-        val config = ThunderIDConfig(
-            baseUrl = "https://localhost:8090",
-            clientId = "my-client",
-            scopes = listOf("openid", "profile")
-        )
-        client.initialize(config, storage)
-        val retrieved = client.getConfiguration()
-        assertEquals("https://localhost:8090", retrieved.baseUrl)
-        assertEquals("my-client", retrieved.clientId)
-        assertEquals(listOf("openid", "profile"), retrieved.scopes)
-    }
+    fun `operations before init throw SDK_NOT_INITIALIZED`() =
+        runTest {
+            try {
+                client.isSignedIn()
+                fail("Expected IAMException")
+            } catch (e: IAMException) {
+                assertEquals(ThunderIDErrorCode.SDK_NOT_INITIALIZED, e.code)
+            }
+        }
+
+    @Test
+    fun `getConfiguration returns config after init`() =
+        runTest {
+            val config =
+                ThunderIDConfig(
+                    baseUrl = "https://localhost:8090",
+                    clientId = "my-client",
+                    scopes = listOf("openid", "profile"),
+                )
+            client.initialize(config, storage)
+            val retrieved = client.getConfiguration()
+            assertEquals("https://localhost:8090", retrieved.baseUrl)
+            assertEquals("my-client", retrieved.clientId)
+            assertEquals(listOf("openid", "profile"), retrieved.scopes)
+        }
 
     // PKCE
 
@@ -91,13 +121,14 @@ class ThunderIDClientTest {
     @Test
     fun `TokenStore saves and retrieves tokens`() {
         val store = dev.thunderid.android.token.TokenStore(storage)
-        val response = TokenResponse(
-            accessToken = "access123",
-            tokenType = "Bearer",
-            expiresIn = 3600,
-            refreshToken = "refresh456",
-            idToken = "id789"
-        )
+        val response =
+            TokenResponse(
+                accessToken = "access123",
+                tokenType = "Bearer",
+                expiresIn = 3600,
+                refreshToken = "refresh456",
+                idToken = "id789",
+            )
         store.save(response)
         assertEquals("access123", store.accessToken())
         assertEquals("refresh456", store.refreshToken())
@@ -129,36 +160,38 @@ class ThunderIDClientTest {
     // isLoading
 
     @Test
-    fun `isLoading defaults false after init`() = runTest {
-        client.initialize(ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test"), storage)
-        assertFalse(client.isLoading())
-    }
+    fun `isLoading defaults false after init`() =
+        runTest {
+            client.initialize(ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test"), storage)
+            assertFalse(client.isLoading())
+        }
 
     // clearSession
 
     @Test
-    fun `clearSession means isSignedIn returns false`() = runTest {
-        client.initialize(ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test"), storage)
-        client.clearSession()
-        assertFalse(client.isSignedIn())
-    }
+    fun `clearSession means isSignedIn returns false`() =
+        runTest {
+            client.initialize(ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "test"), storage)
+            client.clearSession()
+            assertFalse(client.isSignedIn())
+        }
 
     // Error codes
 
     @Test
-    fun `IAMErrorCode fromValue round-trips`() {
-        val code = IAMErrorCode.fromValue("AUTHENTICATION_FAILED")
-        assertEquals(IAMErrorCode.AUTHENTICATION_FAILED, code)
+    fun `ThunderIDErrorCode fromValue round-trips`() {
+        val code = ThunderIDErrorCode.fromValue("AUTHENTICATION_FAILED")
+        assertEquals(ThunderIDErrorCode.AUTHENTICATION_FAILED, code)
     }
 
     @Test
-    fun `IAMErrorCode fromValue returns UNKNOWN_ERROR for unknown`() {
-        assertEquals(IAMErrorCode.UNKNOWN_ERROR, IAMErrorCode.fromValue("NOT_A_REAL_CODE"))
+    fun `ThunderIDErrorCode fromValue returns UNKNOWN_ERROR for unknown`() {
+        assertEquals(ThunderIDErrorCode.UNKNOWN_ERROR, ThunderIDErrorCode.fromValue("NOT_A_REAL_CODE"))
     }
 
     @Test
     fun `IAMException message includes code`() {
-        val ex = IAMException(IAMErrorCode.NETWORK_ERROR, "connection refused")
+        val ex = IAMException(ThunderIDErrorCode.NETWORK_ERROR, "connection refused")
         assertTrue(ex.message!!.contains("NETWORK_ERROR"))
     }
 
@@ -166,7 +199,7 @@ class ThunderIDClientTest {
     fun `flow submit body uses action field`() {
         val flowClient = FlowExecutionClient(HttpClient(baseUrl = "https://localhost:8090"))
 
-        val body = flowClient.submitBody("flow-123", "basic_auth")
+        val body = flowClient.submitBody("flow-123", "basic_auth", null)
 
         assertEquals("flow-123", body["executionId"])
         assertEquals("basic_auth", body["action"])

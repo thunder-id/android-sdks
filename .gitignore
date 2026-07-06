@@ -5,10 +5,8 @@ build/
 # Local configuration file (sdk path, etc)
 local.properties
 
-# Environment variables (use .env.example as a template)
-.env
-.env.local
-.env.*.local
+# Local build config (copy config.properties.example and fill in your values)
+config.properties
 
 # Log/OS Files
 *.log

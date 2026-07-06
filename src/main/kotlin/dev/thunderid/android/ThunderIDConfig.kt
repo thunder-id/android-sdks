@@ -44,6 +44,8 @@ data class ThunderIDConfig(
     // Storage & Platform
     val storage: StorageAdapter? = null,
     val instanceId: Int? = null,
+    // Development only — bypasses TLS certificate verification. Never use in production.
+    val allowInsecureConnections: Boolean = false,
 )
 
 data class TokenValidationConfig(

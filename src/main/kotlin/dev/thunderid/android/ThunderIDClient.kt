@@ -55,7 +55,7 @@ class ThunderIDClient {
                     ThunderIDErrorCode.INVALID_CONFIGURATION,
                     "A StorageAdapter is required on Android; pass an EncryptedStorageAdapter(context)",
                 )
-        val http = HttpClient(config.baseUrl)
+        val http = HttpClient(config.baseUrl, config.allowInsecureConnections)
         val store = TokenStore(adapter)
         val jwks = JWKSCache(http)
         tokenStore = store
@@ -290,17 +290,23 @@ class ThunderIDClient {
         if (!config.baseUrl.startsWith("https://")) throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl must use HTTPS")
     }
 
-    private suspend fun establishSessionIfNeeded(response: EmbeddedFlowResponse) {
+    private fun establishSessionIfNeeded(response: EmbeddedFlowResponse) {
         val assertion = response.assertion
         if (response.flowStatus != FlowStatus.COMPLETE || assertion.isNullOrEmpty()) {
             return
         }
-
-        exchangeToken(
-            TokenExchangeRequestConfig(
-                subjectToken = assertion,
-                subjectTokenType = "urn:ietf:params:oauth:token-type:jwt",
-            ),
-        )
+        tokenStore!!.save(TokenResponse(accessToken = assertion, tokenType = "Bearer"))
+        try {
+            val claims = decodeJwtToken(assertion)
+            currentUser =
+                User(
+                    sub = claims["sub"] as? String ?: "",
+                    username = claims["username"] as? String ?: claims["preferred_username"] as? String,
+                    email = claims["email"] as? String,
+                    displayName = claims["name"] as? String ?: claims["displayName"] as? String,
+                )
+        } catch (_: Exception) {
+            // assertion is stored; user info will be fetched via getUser() on next access
+        }
     }
 }

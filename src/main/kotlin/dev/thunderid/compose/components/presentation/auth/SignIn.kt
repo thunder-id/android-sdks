@@ -21,11 +21,12 @@ package dev.thunderid.compose.components.presentation.auth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -38,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.thunderid.android.EmbeddedFlowRequestConfig
 import dev.thunderid.android.EmbeddedFlowResponse
@@ -48,7 +52,6 @@ import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowType
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
-import dev.thunderid.compose.components.actions.BaseSignInButton
 import kotlinx.coroutines.launch
 
 /** State passed to the [BaseSignIn] builder slot. */
@@ -101,24 +104,30 @@ fun SignIn(
     val i18n = thunderState.i18n
     BaseSignIn(applicationId = applicationId, modifier = modifier, onComplete = onComplete, onError = onError) { signInState ->
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            BasicText(i18n.resolve("signIn.title"))
-            signInState.error?.let { BasicText(it) }
+            signInState.error?.let { Text(it) }
             signInState.inputs.forEach { input ->
-                BasicTextField(
+                val isPassword = input.type == "PASSWORD_INPUT"
+                OutlinedTextField(
                     value = signInState.fieldValue(input.name),
                     onValueChange = { signInState.setField(input.name, it) },
-                    modifier =
-                        Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp)
-                            .semantics { contentDescription = input.name },
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = input.name },
+                    placeholder = { Text(input.name) },
+                    visualTransformation =
+                        if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+                    keyboardOptions =
+                        KeyboardOptions(keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text),
+                    singleLine = true,
                 )
             }
             signInState.actions.forEach { action ->
-                BaseSignInButton(
-                    label = action.label ?: i18n.resolve("signIn.submit"),
-                    isLoading = signInState.isLoading,
-                ) { signInState.submit(action.id) }
+                Button(
+                    onClick = { signInState.submit(action.id ?: action.ref ?: "") },
+                    enabled = !signInState.isLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(action.label ?: i18n.resolve("signIn.submit"))
+                }
             }
-            if (signInState.isLoading) BasicText(i18n.resolve("signIn.loading"))
         }
     }
 }
@@ -150,6 +159,7 @@ fun BaseSignIn(
                 val response = thunderState.client.signIn(payload = payload, request = request)
                 handleSignInResponse(response, signInState, thunderState, onComplete, onError)
             } catch (e: Exception) {
+                android.util.Log.e("ThunderID:SignIn", "Flow submit failed", e)
                 signInState.error = e.message
                 onError?.invoke(e.message ?: "Sign-in failed")
             } finally {
@@ -164,8 +174,14 @@ fun BaseSignIn(
             val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
             val payload = EmbeddedSignInPayload(actionId = "__initiate__")
             val response = thunderState.client.signIn(payload = payload, request = request)
+            android.util.Log.d(
+                "ThunderID:SignIn",
+                "status=${response.flowStatus} inputs=${response.data?.inputs?.size} " +
+                    "actions=${response.data?.actions?.size} data=${response.data}",
+            )
             handleSignInResponse(response, signInState, thunderState, onComplete, onError)
         } catch (e: Exception) {
+            android.util.Log.e("ThunderID:SignIn", "Flow initiation failed", e)
             signInState.error = e.message
             onError?.invoke(e.message ?: "Sign-in failed")
         } finally {
@@ -188,8 +204,7 @@ private suspend fun handleSignInResponse(
             thunderState.refresh()
             onComplete?.invoke()
         }
-        FlowStatus.PROMPT_ONLY -> signInState.update(response)
-        FlowStatus.INCOMPLETE -> {}
+        FlowStatus.PROMPT_ONLY, FlowStatus.INCOMPLETE -> signInState.update(response)
         FlowStatus.ERROR -> {
             val msg = response.failureReason ?: "Sign-in failed"
             signInState.error = msg

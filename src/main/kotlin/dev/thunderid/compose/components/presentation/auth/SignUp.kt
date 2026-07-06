@@ -111,7 +111,7 @@ fun SignUp(
             }
             state.actions.forEach { action ->
                 BaseSignUpButton(label = action.label ?: i18n.resolve("signUp.submit")) {
-                    state.submit(action.id)
+                    state.submit(action.id ?: action.ref ?: "")
                 }
             }
             if (state.isLoading) BasicText(i18n.resolve("signUp.loading"))

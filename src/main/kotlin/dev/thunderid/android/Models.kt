@@ -107,7 +107,7 @@ data class FlowStepData(
 )
 
 data class FlowAction(
-    val id: String,
+    val id: String? = null,
     val ref: String? = null,
     val nextNode: String? = null,
     val type: String? = null,

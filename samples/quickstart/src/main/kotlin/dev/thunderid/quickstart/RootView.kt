@@ -38,6 +38,7 @@ import dev.thunderid.compose.LocalThunderID
 fun QuickstartApp(applicationId: String) {
     val thunder = LocalThunderID.current
     when {
+        thunder.error != null && !thunder.isInitialized -> ErrorScreen(thunder.error!!)
         !thunder.isInitialized || thunder.isLoading -> LoadingScreen()
         thunder.error != null -> ErrorScreen(thunder.error!!)
         thunder.isSignedIn -> HomeScreen()
@@ -51,7 +52,7 @@ private fun LoadingScreen() {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator()
             Spacer(Modifier.height(12.dp))
-            Text("Starting ACME Booking…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Starting ThunderID…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

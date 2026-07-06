@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -14,12 +16,17 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        // Load ThunderID config from local.properties or environment
-        val baseUrl = project.findProperty("THUNDERID_BASE_URL") as String? ?: ""
-        val clientId = project.findProperty("THUNDERID_CLIENT_ID") as String? ?: ""
-        val appId = project.findProperty("THUNDERID_APPLICATION_ID") as String? ?: ""
-        val afterSignInUrl = project.findProperty("THUNDERID_AFTER_SIGN_IN_URL") as String? ?: ""
-        val afterSignOutUrl = project.findProperty("THUNDERID_AFTER_SIGN_OUT_URL") as String? ?: ""
+        // Load ThunderID config from config.properties (gitignored).
+        // Copy config.properties.example to config.properties and fill in your values.
+        val configProps = Properties()
+        val configFile = rootProject.file("config.properties")
+        if (configFile.exists()) configFile.inputStream().use { configProps.load(it) }
+        fun config(key: String) = configProps.getProperty(key) ?: System.getenv(key) ?: ""
+        val baseUrl = config("THUNDERID_BASE_URL")
+        val clientId = config("THUNDERID_CLIENT_ID")
+        val appId = config("THUNDERID_APPLICATION_ID")
+        val afterSignInUrl = config("THUNDERID_AFTER_SIGN_IN_URL")
+        val afterSignOutUrl = config("THUNDERID_AFTER_SIGN_OUT_URL")
         buildConfigField("String", "THUNDERID_BASE_URL", "\"$baseUrl\"")
         buildConfigField("String", "THUNDERID_CLIENT_ID", "\"$clientId\"")
         buildConfigField("String", "THUNDERID_APPLICATION_ID", "\"$appId\"")

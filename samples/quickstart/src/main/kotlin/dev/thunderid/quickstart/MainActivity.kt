@@ -24,6 +24,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import dev.thunderid.android.EncryptedStorageAdapter
 import dev.thunderid.android.ThunderIDConfig
 import dev.thunderid.compose.ThunderIDProvider
 
@@ -40,6 +41,8 @@ class MainActivity : ComponentActivity() {
             afterSignInUrl = BuildConfig.THUNDERID_AFTER_SIGN_IN_URL.takeIf { it.isNotBlank() },
             afterSignOutUrl = BuildConfig.THUNDERID_AFTER_SIGN_OUT_URL.takeIf { it.isNotBlank() },
             applicationId = BuildConfig.THUNDERID_APPLICATION_ID.takeIf { it.isNotBlank() },
+            storage = EncryptedStorageAdapter(this),
+            allowInsecureConnections = BuildConfig.DEBUG,
         )
 
         val colorScheme = lightColorScheme(primary = AcmePrimary)

@@ -124,7 +124,7 @@ private suspend fun handleSignUpResponse(
 ) {
     when (response.flowStatus) {
         FlowStatus.COMPLETE -> { thunderState.refresh(); onComplete?.invoke() }
-        FlowStatus.PROMPT_ONLY -> state.update(response)
+        FlowStatus.PROMPT_ONLY, FlowStatus.INCOMPLETE -> state.update(response)
         FlowStatus.ERROR -> {
             val msg = response.failureReason ?: "Sign-up failed"
             state.error = msg

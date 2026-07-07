@@ -1,17 +1,24 @@
 package dev.thunderid.compose.components.presentation.auth
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.thunderid.android.*
+import dev.thunderid.android.auth.FederatedAuthSession
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.components.actions.BaseSignInButton
+import dev.thunderid.compose.components.presentation.auth.adapters.GitHubButton
+import dev.thunderid.compose.components.presentation.auth.adapters.GoogleButton
+import dev.thunderid.compose.components.presentation.auth.adapters.OutlinedTriggerButton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** State passed to the [BaseSignIn] builder slot. */
@@ -28,6 +35,7 @@ class SignInState {
 
     internal var flowId: String? = null
     internal var challengeToken: String? = null
+    internal var lastActionId: String? = null
     internal var onSubmit: (String) -> Unit = {}
     private val fieldValues = mutableStateMapOf<String, String>()
 
@@ -67,10 +75,24 @@ fun SignIn(
                 )
             }
             signInState.actions.forEach { action ->
-                BaseSignInButton(
-                    label = action.label ?: i18n.resolve("signIn.submit"),
-                    isLoading = signInState.isLoading,
-                ) { signInState.submit(action.id) }
+                if (action.eventType?.uppercase() == "TRIGGER") {
+                    val hint = "${action.ref.orEmpty()} ${action.label.orEmpty()}"
+                    when {
+                        hint.contains("google", ignoreCase = true) ->
+                            GoogleButton { signInState.submit(action.id) }
+                        hint.contains("github", ignoreCase = true) ->
+                            GitHubButton { signInState.submit(action.id) }
+                        else ->
+                            OutlinedTriggerButton(label = action.label ?: i18n.resolve("signIn.submit")) {
+                                signInState.submit(action.id)
+                            }
+                    }
+                } else {
+                    BaseSignInButton(
+                        label = action.label ?: i18n.resolve("signIn.submit"),
+                        isLoading = signInState.isLoading,
+                    ) { signInState.submit(action.id) }
+                }
             }
             if (signInState.isLoading) BasicText(i18n.resolve("signIn.loading"))
         }
@@ -87,6 +109,7 @@ fun BaseSignIn(
     content: @Composable (SignInState) -> Unit,
 ) {
     val thunderState = LocalThunderID.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val signInState = remember { SignInState() }
 
@@ -95,13 +118,14 @@ fun BaseSignIn(
             signInState.isLoading = true
             signInState.error = null
             try {
+                signInState.lastActionId = actionId
                 val payload = EmbeddedSignInPayload(
                     flowId = signInState.flowId, actionId = actionId, inputs = signInState.fields(),
                     challengeToken = signInState.challengeToken
                 )
                 val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
                 val response = thunderState.client.signIn(payload = payload, request = request)
-                handleSignInResponse(response, signInState, thunderState, onComplete, onError)
+                handleSignInResponse(response, signInState, thunderState, applicationId, context, onComplete, onError)
             } catch (e: Exception) {
                 signInState.error = e.message
                 onError?.invoke(e.message ?: "Sign-in failed")
@@ -117,7 +141,7 @@ fun BaseSignIn(
             val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
             val payload = EmbeddedSignInPayload(actionId = "__initiate__")
             val response = thunderState.client.signIn(payload = payload, request = request)
-            handleSignInResponse(response, signInState, thunderState, onComplete, onError)
+            handleSignInResponse(response, signInState, thunderState, applicationId, context, onComplete, onError)
         } catch (e: Exception) {
             signInState.error = e.message
             onError?.invoke(e.message ?: "Sign-in failed")
@@ -133,16 +157,60 @@ private suspend fun handleSignInResponse(
     response: EmbeddedFlowResponse,
     signInState: SignInState,
     thunderState: ThunderIDState,
+    applicationId: String,
+    context: Context,
     onComplete: (() -> Unit)?,
     onError: ((String) -> Unit)?,
 ) {
     when (response.flowStatus) {
         FlowStatus.COMPLETE -> { thunderState.refresh(); onComplete?.invoke() }
         FlowStatus.PROMPT_ONLY -> signInState.update(response)
+        FlowStatus.INCOMPLETE -> {
+            val redirectUrl = response.data?.redirectURL
+            if (response.type == "REDIRECTION" && redirectUrl != null) {
+                handleRedirection(response, redirectUrl, signInState, thunderState, applicationId, context, onComplete, onError)
+            } else {
+                signInState.update(response)
+            }
+        }
         FlowStatus.ERROR -> {
             val msg = response.failureReason ?: "Sign-in failed"
             signInState.error = msg
             onError?.invoke(msg)
         }
+    }
+}
+
+private suspend fun handleRedirection(
+    response: EmbeddedFlowResponse,
+    redirectUrl: String,
+    signInState: SignInState,
+    thunderState: ThunderIDState,
+    applicationId: String,
+    context: Context,
+    onComplete: (() -> Unit)?,
+    onError: ((String) -> Unit)?,
+) {
+    try {
+        val callbackUri = FederatedAuthSession.launch(context, redirectUrl)
+        val code = callbackUri.getQueryParameter("code")
+        if (code.isNullOrEmpty()) {
+            onError?.invoke("Federated sign-in did not return an authorization code")
+            return
+        }
+        val payload = EmbeddedSignInPayload(
+            flowId = response.flowId ?: signInState.flowId,
+            actionId = signInState.lastActionId ?: "",
+            inputs = mapOf("code" to code),
+            challengeToken = response.challengeToken ?: signInState.challengeToken,
+        )
+        val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
+        val next = thunderState.client.signIn(payload = payload, request = request)
+        handleSignInResponse(next, signInState, thunderState, applicationId, context, onComplete, onError)
+    } catch (e: CancellationException) {
+        // User dismissed the browser without completing sign-in — not an error.
+    } catch (e: Exception) {
+        signInState.error = e.message
+        onError?.invoke(e.message ?: "Sign-in failed")
     }
 }

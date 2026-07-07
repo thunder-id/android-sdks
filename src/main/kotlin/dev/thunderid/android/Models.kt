@@ -85,7 +85,9 @@ enum class FlowStatus { PROMPT_ONLY, INCOMPLETE, COMPLETE, ERROR }
 data class FlowStepData(
     val actions: List<FlowAction>? = null,
     val inputs: List<FlowInput>? = null,
-    val meta: Map<String, Any?>? = null
+    val meta: Map<String, Any?>? = null,
+    val redirectURL: String? = null,
+    val additionalData: Map<String, Any?>? = null
 )
 
 data class FlowAction(
@@ -93,7 +95,8 @@ data class FlowAction(
     val ref: String? = null,
     val nextNode: String? = null,
     val type: String? = null,
-    val label: String? = null
+    val label: String? = null,
+    val eventType: String? = null
 )
 
 data class FlowInput(

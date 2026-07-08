@@ -1,6 +1,6 @@
 # Entrypoint workflow for releasing the Android SDK.
 
-name: 📦 Release Android SDK
+name: 🚀 Release
 
 on:
   workflow_dispatch:

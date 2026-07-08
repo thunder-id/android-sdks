@@ -1,18 +1,32 @@
+/*
+ * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
+ *
+ * WSO2 LLC. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package dev.thunderid.quickstart
 
 import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,58 +37,30 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CardTravel
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.CardTravel
-import androidx.compose.material.icons.outlined.Diamond
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Terrain
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.thunderid.android.User
@@ -82,584 +68,746 @@ import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.actions.SignOutButton
 import dev.thunderid.compose.components.presentation.user.UserProfile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Home screen
+// Design tokens
 // ─────────────────────────────────────────────────────────────────────────────
 
-@Composable
-fun HomeScreen() {
-    val thunder = LocalThunderID.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+private val PrimaryBlue = Color(0xFF3688FF)
+private val SuccessGreen = Color(0xFF2FBD6B)
+private val ErrorRed = Color(0xFFD95757)
+private val DarkBg = Color(0xFF080F1C)
+private val LightBg = Color(0xFFF7F9FC)
+private val BorderLight = Color(0xFFDDE3EC)
+private val TextPrimary = Color(0xFF05213F)
+private val TextMuted = Color(0xFF5A7085)
+private val TokenDarkBg = Color(0xFF0B1120)
 
-    LaunchedEffect(Unit) {
-        if (BuildConfig.DEBUG) logAccessToken(thunder)
-    }
-
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                listOf(
-                    Triple("Explore", Icons.Filled.Explore, Icons.Outlined.Explore),
-                    Triple("Saved", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder),
-                    Triple("Trips", Icons.Filled.CardTravel, Icons.Outlined.CardTravel),
-                    Triple("Inbox", Icons.Filled.Email, Icons.Outlined.Email),
-                    Triple("Profile", Icons.Filled.Person, Icons.Outlined.Person),
-                ).forEachIndexed { index, (label, filled, outlined) ->
-                    NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        icon = {
-                            Icon(if (selectedTab == index) filled else outlined, contentDescription = label)
-                        },
-                        label = { Text(label) },
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            when (selectedTab) {
-                0 -> ExploreTab(onProfileTap = { selectedTab = 4 })
-                1 -> PlaceholderTab("Saved", Icons.Outlined.FavoriteBorder)
-                2 -> PlaceholderTab("Trips", Icons.Outlined.CardTravel)
-                3 -> PlaceholderTab("Inbox", Icons.Outlined.Email)
-                4 -> ProfileTab()
-            }
-        }
-    }
-}
-
-private suspend fun logAccessToken(thunder: dev.thunderid.compose.ThunderIDState) {
-    try {
-        val token = thunder.client.getAccessToken()
-        android.util.Log.d("HomeScreen", "access token: $token")
-        android.util.Log.d("HomeScreen", "token payload: ${decodeJwtPayload(token)}")
-    } catch (e: Exception) {
-        android.util.Log.d("HomeScreen", "could not get access token: $e")
-    }
-}
-
-private fun decodeJwtPayload(token: String): String {
-    val parts = token.split(".")
-    if (parts.size != 3) return "(not a JWT)"
-    return try {
-        val padded = parts[1].let { it + "=".repeat((4 - it.length % 4) % 4) }
-        String(android.util.Base64.decode(padded, android.util.Base64.URL_SAFE))
-    } catch (_: Exception) {
-        "(decode error)"
-    }
-}
+// JWT color coding
+private val JwtHeaderColor = Color(0xFFFF7B72)
+private val JwtPayloadColor = Color(0xFF79C0FF)
+private val JwtSignatureColor = Color(0xFF3FB950)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Explore tab
-// ─────────────────────────────────────────────────────────────────────────────
-
-private data class Listing(
-    val title: String,
-    val location: String,
-    val price: Int,
-    val rating: Double,
-    val imageUrl: String,
-)
-
-private val listings = listOf(
-    Listing("Cozy Mountain Retreat", "Aspen, Colorado", 189, 4.92, "https://picsum.photos/seed/acme1/400/280"),
-    Listing("Beachfront Villa", "Malibu, California", 342, 4.87, "https://picsum.photos/seed/acme2/400/280"),
-    Listing("City Centre Loft", "New York, NY", 215, 4.78, "https://picsum.photos/seed/acme3/400/280"),
-    Listing("Lakeside Cabin", "Lake Tahoe, Nevada", 156, 4.95, "https://picsum.photos/seed/acme4/400/280"),
-)
-
-private val categories = listOf("Stays", "Experiences", "Adventures", "Luxe")
-private val categoryIcons = listOf(
-    Icons.Outlined.Home,
-    Icons.Outlined.Map,
-    Icons.Outlined.Terrain,
-    Icons.Outlined.Diamond,
-)
-private val sorts = listOf("Popular", "Near", "Best Price")
-
-@Composable
-private fun ExploreTab(onProfileTap: () -> Unit) {
-    val thunder = LocalThunderID.current
-    val cs = MaterialTheme.colorScheme
-    var categoryIndex by remember { mutableIntStateOf(0) }
-    var sortIndex by remember { mutableIntStateOf(0) }
-
-    val firstName = remember(thunder.user) {
-        (thunder.user?.claims?.get("given_name") as? String)?.takeIf { it.isNotEmpty() }
-            ?: thunder.user?.displayName?.split(" ")?.firstOrNull()
-            ?: "there"
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-    ) {
-        // Top bar
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Home, contentDescription = null, tint = cs.primary)
-            Spacer(Modifier.width(6.dp))
-            Text("ACME Booking", color = cs.primary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            Spacer(Modifier.weight(1f))
-            UserAvatar(user = thunder.user, radius = 18.dp, modifier = Modifier.clickable { onProfileTap() })
-            Spacer(Modifier.width(8.dp))
-        }
-
-        // Welcome heading
-        Text(
-            text = "Where Would you\nLike to Stay, $firstName?",
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp),
-        )
-
-        // Search bar
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 24.dp, vertical = 16.dp)
-                .fillMaxWidth()
-                .background(cs.surfaceContainerHighest, CircleShape)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Search, contentDescription = null, tint = cs.onSurfaceVariant)
-            Spacer(Modifier.width(8.dp))
-            Text("Search destinations...", color = cs.onSurfaceVariant)
-        }
-
-        // Category chips
-        Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(start = 24.dp, end = 12.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            categories.forEachIndexed { i, label ->
-                val selected = i == categoryIndex
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.clickable { categoryIndex = i },
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(
-                                if (selected) cs.primary else cs.surfaceContainerHighest,
-                                RoundedCornerShape(14.dp),
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = categoryIcons[i],
-                            contentDescription = label,
-                            tint = if (selected) cs.onPrimary else cs.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = label,
-                        fontSize = 11.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) cs.primary else cs.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        // Sort tabs
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            sorts.forEachIndexed { i, label ->
-                val selected = i == sortIndex
-                Column(
-                    modifier = Modifier
-                        .clickable { sortIndex = i }
-                        .padding(end = if (i < sorts.size - 1) 20.dp else 0.dp),
-                ) {
-                    Text(
-                        text = label,
-                        fontSize = 15.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) cs.onSurface else cs.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    if (selected) {
-                        Box(
-                            modifier = Modifier
-                                .width(28.dp)
-                                .height(2.dp)
-                                .background(cs.primary, RoundedCornerShape(1.dp)),
-                        )
-                    } else {
-                        Spacer(Modifier.height(2.dp))
-                    }
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            Text("See More", color = cs.primary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        }
-
-        // Listings grid (2 columns)
-        Column(
-            modifier = Modifier.padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            listings.chunked(2).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { listing ->
-                        ListingCard(listing = listing, modifier = Modifier.weight(1f))
-                    }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
-                }
-            }
-        }
-        Spacer(Modifier.height(24.dp))
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Profile tab
+// Root composable
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfileTab() {
+fun HomeScreen() {
+    var screen by remember { mutableStateOf("home") }
     val thunder = LocalThunderID.current
-    val cs = MaterialTheme.colorScheme
-    var showEditProfile by remember { mutableStateOf(false) }
 
-    val displayName = remember(thunder.user) {
-        val given = thunder.user?.claims?.get("given_name") as? String ?: ""
-        val family = thunder.user?.claims?.get("family_name") as? String ?: ""
-        val full = listOf(given, family).filter { it.isNotEmpty() }.joinToString(" ")
-        full.ifEmpty { thunder.user?.username ?: "Guest" }
+    when (screen) {
+        "home" -> HomeTab(onNavigate = { screen = it })
+        "profile" -> ProfileScreen(onBack = { screen = "home" })
+        "token" -> TokenDebugScreen(onBack = { screen = "home" })
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Home tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun HomeTab(onNavigate: (String) -> Unit) {
+    val thunder = LocalThunderID.current
+
+    val displayName = remember(thunder.user) { userDisplayName(thunder.user) }
+    val initials = remember(displayName) { userInitials(displayName) }
+    val email = remember(thunder.user) { thunder.user?.email ?: "" }
+
+    val dateLabel = remember {
+        SimpleDateFormat("EEEE, MMMM d", Locale.ENGLISH).format(Date()).uppercase()
+    }
+    val greeting = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> "Good morning."
+            hour < 17 -> "Good afternoon."
+            else -> "Good evening."
+        }
+    }
+
+    val claims = thunder.user?.claims
+    val authTime = remember(claims) { claimAsEpochSeconds(claims, "auth_time") }
+    val exp = remember(claims) { claimAsEpochSeconds(claims, "exp") }
+    val organisationName = remember(thunder.user) {
+        runCatching { thunder.client.getConfiguration().organizationHandle }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: "Default"
+    }
+
+    var nowSeconds by remember { mutableStateOf(System.currentTimeMillis() / 1000) }
+    LaunchedEffect(exp) {
+        while (exp != null) {
+            nowSeconds = System.currentTimeMillis() / 1000
+            delay(1000)
+        }
+    }
+
+    val signedInAtLabel = remember(authTime) { formatSignedInAt(authTime) }
+    val expiresInLabel = remember(exp, nowSeconds) { formatExpiresIn(exp, nowSeconds) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightBg)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Spacer(Modifier.height(56.dp))
+
+        // User identity section
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Avatar
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(PrimaryBlue, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = initials,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text(
+                        text = displayName,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = email,
+                        fontSize = 13.sp,
+                        color = TextMuted,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    // Session active badge
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(SuccessGreen, CircleShape),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "Session active",
+                            fontSize = 12.sp,
+                            color = SuccessGreen,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // Date + greeting
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Text(
+                text = dateLabel,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextMuted,
+                letterSpacing = 1.sp,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = greeting,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Stats row
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth()
+                .border(1.dp, BorderLight, RoundedCornerShape(12.dp))
+                .padding(vertical = 18.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StatColumn(value = signedInAtLabel, label = "SIGNED IN AT")
+            VerticalDivider(modifier = Modifier.height(36.dp), color = BorderLight)
+            StatColumn(value = expiresInLabel, label = "EXPIRES IN")
+            VerticalDivider(modifier = Modifier.height(36.dp), color = BorderLight)
+            StatColumn(value = organisationName, label = "ORGANISATION")
+        }
+
+        Spacer(Modifier.height(28.dp))
+
+        // "What's next" section
+        Text(
+            text = "WHAT'S NEXT",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextMuted,
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        val steps = listOf(
+            Triple("01", "Secure your API", "Add token validation to your backend."),
+            Triple("02", "Add social login", "GitHub, Google, and OIDC providers."),
+            Triple("03", "Enable MFA", "TOTP and passkey support."),
+            Triple("04", "Explore the SDK", "API reference and guides."),
+        )
+
+        steps.forEach { (num, title, subtitle) ->
+            StepRow(number = num, title = title, subtitle = subtitle)
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // Action rows
+        ActionRow(label = "My profile", onClick = { onNavigate("profile") })
+        ActionRow(label = "Token debug", onClick = { onNavigate("token") })
+        ActionRow(label = "Settings", onClick = {})
+
+        // Sign out
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(width = 1.dp, color = BorderLight, shape = RoundedCornerShape(0.dp))
+                .padding(horizontal = 24.dp, vertical = 4.dp),
+        ) {
+            SignOutButton(modifier = Modifier.fillMaxWidth())
+        }
+
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun StatColumn(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextMuted,
+            letterSpacing = 0.8.sp,
+        )
+    }
+}
+
+@Composable
+private fun StepRow(number: String, title: String, subtitle: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(width = 0.dp, color = Color.Transparent)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = number,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            color = PrimaryBlue,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(2.dp))
+            Text(text = subtitle, fontSize = 13.sp, color = TextMuted)
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(BorderLight),
+    )
+}
+
+@Composable
+private fun ActionRow(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(width = 1.dp, color = BorderLight, shape = RoundedCornerShape(0.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                fontSize = 15.sp,
+                color = TextPrimary,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(text = "›", fontSize = 20.sp, color = TextMuted)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Profile screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileScreen(onBack: () -> Unit) {
+    val thunder = LocalThunderID.current
+    val displayName = remember(thunder.user) { userDisplayName(thunder.user) }
+    val initials = remember(displayName) { userInitials(displayName) }
+    val email = remember(thunder.user) { thunder.user?.email ?: "" }
+    val userId = thunder.user?.sub ?: "—"
+    val username = thunder.user?.username ?: "—"
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightBg)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Spacer(Modifier.height(56.dp))
+
+        // Back button
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .clickable(onClick = onBack),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = "‹", fontSize = 20.sp, color = PrimaryBlue)
+            Spacer(Modifier.width(4.dp))
+            Text(text = "Home", fontSize = 15.sp, color = PrimaryBlue, fontWeight = FontWeight.Medium)
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Avatar + identity
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(PrimaryBlue, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = initials, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(text = displayName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(2.dp))
+            Text(text = email, fontSize = 13.sp, color = TextMuted)
+            Spacer(Modifier.height(8.dp))
+            // Email verified badge
+            Row(
+                modifier = Modifier
+                    .background(SuccessGreen.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(SuccessGreen, CircleShape),
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(text = "Email verified", fontSize = 12.sp, color = SuccessGreen, fontWeight = FontWeight.Medium)
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // Account details
+        SectionHeader(title = "ACCOUNT DETAILS")
+        DetailCard {
+            DetailRow(label = "User ID") {
+                Text(
+                    text = userId,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = TextMuted,
+                    maxLines = 1,
+                )
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderLight))
+            DetailRow(label = "Username") {
+                Text(text = username, fontSize = 13.sp, color = TextMuted)
+            }
+        }
+
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        color = TextMuted,
+        letterSpacing = 1.5.sp,
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun DetailCard(content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .fillMaxWidth()
+            .border(1.dp, BorderLight, RoundedCornerShape(12.dp))
+            .background(Color.White, RoundedCornerShape(12.dp)),
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, content: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = TextMuted,
+            modifier = Modifier.width(100.dp),
+        )
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            content()
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token Debug screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun TokenDebugScreen(onBack: () -> Unit) {
+    val thunder = LocalThunderID.current
+    var token by remember { mutableStateOf("") }
+    val clipboardManager = LocalClipboardManager.current
+
+    LaunchedEffect(Unit) {
+        try {
+            token = thunder.client.getAccessToken()
+        } catch (_: Exception) {}
+    }
+
+    val decoded = remember(token) { if (token.isNotEmpty()) decodeJwtPayload(token) else emptyMap() }
+    val rawJson = decoded["raw"] as? String ?: ""
+    val parts = (decoded["parts"] as? List<*>)?.map { it.toString() } ?: emptyList()
+
+    val expiryText = remember(rawJson) {
+        val expMatch = Regex("\"exp\"\\s*:\\s*(\\d+)").find(rawJson)
+        val exp = expMatch?.groupValues?.get(1)?.toLongOrNull()
+        if (exp != null) {
+            val remaining = (exp - System.currentTimeMillis() / 1000)
+            when {
+                remaining <= 0 -> "Expired"
+                remaining < 60 -> "${remaining}s remaining"
+                else -> "${remaining / 60}m remaining"
+            }
+        } else {
+            "Unknown"
+        }
+    }
+
+    val issuer = remember(rawJson) {
+        Regex("\"iss\"\\s*:\\s*\"([^\"]+)\"").find(rawJson)?.groupValues?.get(1) ?: "—"
+    }
+    val scopes = remember(rawJson) {
+        Regex("\"scope\"\\s*:\\s*\"([^\"]+)\"").find(rawJson)?.groupValues?.get(1) ?: "—"
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .background(LightBg)
+            .verticalScroll(rememberScrollState()),
     ) {
-        // Header
+        Spacer(Modifier.height(56.dp))
+
+        // Back button
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 20.dp),
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .clickable(onClick = onBack),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text(text = "‹", fontSize = 20.sp, color = PrimaryBlue)
+            Spacer(Modifier.width(4.dp))
+            Text(text = "Home", fontSize = 15.sp, color = PrimaryBlue, fontWeight = FontWeight.Medium)
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Text(text = "Token debug", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(2.dp))
+            Text(text = "Access token and claims", fontSize = 13.sp, color = TextMuted)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Expiry badge
+        Row(modifier = Modifier.padding(horizontal = 24.dp)) {
+            val isExpired = expiryText == "Expired"
             Text(
-                "Profile",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                text = if (isExpired) "Expired" else "Expires: $expiryText",
+                fontSize = 12.sp,
+                color = if (isExpired) ErrorRed else SuccessGreen,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .background(
+                        if (isExpired) ErrorRed.copy(alpha = 0.1f) else SuccessGreen.copy(alpha = 0.1f),
+                        RoundedCornerShape(20.dp),
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             )
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = {}) {
-                Icon(Icons.Outlined.Notifications, contentDescription = "Notifications")
-            }
         }
 
-        // Profile card
-        OutlinedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box {
-                    UserAvatar(user = thunder.user, radius = 40.dp)
-                    Icon(
-                        Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        tint = cs.primary,
-                        modifier = Modifier
-                            .size(22.dp)
-                            .align(Alignment.BottomEnd)
-                            .background(cs.surface, CircleShape),
-                    )
-                }
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text(
-                        displayName,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text("Los Angeles, CA", color = cs.onSurfaceVariant)
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // Stats card
-        OutlinedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+        // Access token display
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatItem("24", "Trips")
-                VerticalDivider(modifier = Modifier.height(44.dp))
-                StatItem("22", "Reviews")
-                VerticalDivider(modifier = Modifier.height(44.dp))
-                StatItem("2", "Years on ACME")
+                Text(text = "ACCESS TOKEN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextMuted, letterSpacing = 1.sp)
+                OutlinedButton(
+                    onClick = { if (token.isNotEmpty()) clipboardManager.setText(AnnotatedString(token)) },
+                    modifier = Modifier.height(28.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                ) {
+                    Text(text = "Copy", fontSize = 11.sp)
+                }
             }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // Feature cards
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard(
-                label = "Past trips",
-                imageUrl = "https://picsum.photos/seed/trips/300/200",
-                isNew = true,
-                modifier = Modifier.weight(1f),
-            )
-            FeatureCard(
-                label = "Connections",
-                imageUrl = "https://picsum.photos/seed/connect/300/200",
-                isNew = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Spacer(Modifier.height(24.dp))
-
-        // Edit Profile button
-        OutlinedButton(
-            onClick = { showEditProfile = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Outlined.Edit, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Edit Profile")
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // Sign Out button (SDK component)
-        SignOutButton(modifier = Modifier.fillMaxWidth())
-        Spacer(Modifier.height(24.dp))
-    }
-
-    if (showEditProfile) {
-        ModalBottomSheet(onDismissRequest = { showEditProfile = false }) {
-            Column(
+            Spacer(Modifier.height(8.dp))
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+                    .background(TokenDarkBg, RoundedCornerShape(10.dp))
+                    .padding(14.dp),
             ) {
-                UserProfile(
-                    modifier = Modifier.fillMaxWidth(),
-                    onSaved = { showEditProfile = false },
-                )
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Placeholder tab
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun PlaceholderTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(52.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(16.dp))
-            Text(label, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(8.dp))
-            Text("Coming soon", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared components
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun UserAvatar(user: User?, radius: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    val pictureUrl = remember(user) {
-        user?.profilePicture?.takeIf { it.isNotEmpty() }
-            ?: (user?.claims?.get("picture") as? String)?.takeIf { it.isNotEmpty() }
-    }
-    var bitmap by remember(pictureUrl) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(pictureUrl) {
-        if (pictureUrl != null) {
-            withContext(Dispatchers.IO) {
-                try {
-                    bitmap = BitmapFactory.decodeStream(java.net.URL(pictureUrl).openStream())?.asImageBitmap()
-                } catch (_: Exception) {}
-            }
-        }
-    }
-
-    val size = radius * 2
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap!!,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = modifier.size(size).clip(CircleShape),
-        )
-    } else {
-        val initial = user?.displayName?.firstOrNull()?.uppercaseChar()?.toString()
-            ?: user?.email?.firstOrNull()?.uppercaseChar()?.toString()
-            ?: "?"
-        Box(
-            modifier = modifier.size(size).background(cs.primaryContainer, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                initial,
-                color = cs.onPrimaryContainer,
-                fontWeight = FontWeight.Bold,
-                fontSize = (radius.value * 0.9).sp,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatItem(value: String, label: String) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.defaultMinSize(minWidth = 72.dp),
-    ) {
-        Text(value, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
-
-@Composable
-private fun FeatureCard(label: String, imageUrl: String, isNew: Boolean, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    var bitmap by remember(imageUrl) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(imageUrl) {
-        withContext(Dispatchers.IO) {
-            try {
-                bitmap = BitmapFactory.decodeStream(java.net.URL(imageUrl).openStream())?.asImageBitmap()
-            } catch (_: Exception) {}
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)),
-    ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap!!,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Box(Modifier.fillMaxSize().background(cs.surfaceContainerHighest))
-        }
-
-        // Gradient overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))),
-                ),
-        )
-
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            if (isNew) {
-                Text(
-                    "NEW",
-                    color = cs.onPrimary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .background(cs.primary, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-            } else {
-                Spacer(Modifier.height(0.dp))
-            }
-            Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        }
-    }
-}
-
-@Composable
-private fun ListingCard(listing: Listing, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    var bitmap by remember(listing.imageUrl) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(listing.imageUrl) {
-        withContext(Dispatchers.IO) {
-            try {
-                bitmap = BitmapFactory.decodeStream(java.net.URL(listing.imageUrl).openStream())?.asImageBitmap()
-            } catch (_: Exception) {}
-        }
-    }
-
-    androidx.compose.material3.Card(
-        shape = RoundedCornerShape(16.dp),
-        modifier = modifier,
-    ) {
-        Column {
-            Box(modifier = Modifier.fillMaxWidth().height(130.dp)) {
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap!!,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                if (token.isNotEmpty() && parts.size == 3) {
+                    val annotated = buildAnnotatedString {
+                        withStyle(SpanStyle(color = JwtHeaderColor)) { append(parts[0]) }
+                        withStyle(SpanStyle(color = Color(0xFF8B8B8B))) { append(".") }
+                        withStyle(SpanStyle(color = JwtPayloadColor)) { append(parts[1]) }
+                        withStyle(SpanStyle(color = Color(0xFF8B8B8B))) { append(".") }
+                        withStyle(SpanStyle(color = JwtSignatureColor)) { append(parts[2]) }
+                    }
+                    Text(
+                        text = annotated,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 16.sp,
                     )
                 } else {
-                    Box(Modifier.fillMaxSize().background(cs.surfaceContainerHighest))
-                }
-                Icon(
-                    Icons.Outlined.FavoriteBorder,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp),
-                )
-            }
-            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        listing.location,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = cs.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        text = if (token.isEmpty()) "Loading…" else token,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF79C0FF),
+                        lineHeight = 16.sp,
                     )
-                    Icon(Icons.Filled.Star, contentDescription = null, tint = cs.primary, modifier = Modifier.size(11.dp))
-                    Spacer(Modifier.width(2.dp))
-                    Text(String.format("%.2f", listing.rating), style = MaterialTheme.typography.labelSmall)
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    listing.title,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text("\$${listing.price}/night", style = MaterialTheme.typography.bodySmall)
             }
         }
+
+        Spacer(Modifier.height(20.dp))
+
+        // JWT Payload
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Text(text = "JWT PAYLOAD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextMuted, letterSpacing = 1.sp)
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(TokenDarkBg, RoundedCornerShape(10.dp))
+                    .padding(14.dp),
+            ) {
+                Text(
+                    text = if (rawJson.isNotEmpty()) prettyPrintJson(rawJson) else "—",
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = JwtPayloadColor,
+                    lineHeight = 18.sp,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // Issuer and Scopes
+        SectionHeader(title = "TOKEN DETAILS")
+        DetailCard {
+            DetailRow(label = "Issuer") {
+                Text(
+                    text = issuer,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = TextMuted,
+                    textAlign = TextAlign.End,
+                )
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderLight))
+            DetailRow(label = "Scopes") {
+                Text(
+                    text = scopes,
+                    fontSize = 12.sp,
+                    color = TextMuted,
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+private fun decodeJwtPayload(token: String): Map<String, Any?> {
+    return try {
+        val parts = token.split(".")
+        if (parts.size != 3) return emptyMap()
+        val padded = parts[1].let { it + "=".repeat((4 - it.length % 4) % 4) }
+        val json = String(android.util.Base64.decode(padded, android.util.Base64.URL_SAFE))
+        mapOf("raw" to json, "parts" to parts)
+    } catch (e: Exception) {
+        emptyMap()
+    }
+}
+
+private fun prettyPrintJson(json: String): String {
+    return try {
+        val sb = StringBuilder()
+        var indent = 0
+        var inString = false
+        for (ch in json) {
+            when {
+                ch == '"' && !inString -> { inString = true; sb.append(ch) }
+                ch == '"' && inString -> { inString = false; sb.append(ch) }
+                inString -> sb.append(ch)
+                ch == '{' || ch == '[' -> {
+                    sb.append(ch)
+                    sb.append('\n')
+                    indent++
+                    repeat(indent) { sb.append("  ") }
+                }
+                ch == '}' || ch == ']' -> {
+                    sb.append('\n')
+                    indent--
+                    repeat(indent) { sb.append("  ") }
+                    sb.append(ch)
+                }
+                ch == ',' -> {
+                    sb.append(ch)
+                    sb.append('\n')
+                    repeat(indent) { sb.append("  ") }
+                }
+                ch == ':' -> sb.append(": ")
+                ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' -> sb.append(ch)
+            }
+        }
+        sb.toString()
+    } catch (_: Exception) {
+        json
+    }
+}
+
+private fun claimAsEpochSeconds(claims: Map<String, Any>?, key: String): Long? {
+    return when (val value = claims?.get(key)) {
+        is Number -> value.toLong()
+        is String -> value.toLongOrNull()
+        else -> null
+    }
+}
+
+private fun formatSignedInAt(authTimeSeconds: Long?): String {
+    if (authTimeSeconds == null) return "—"
+    val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
+    return formatter.format(Date(authTimeSeconds * 1000))
+}
+
+private fun formatExpiresIn(expSeconds: Long?, nowSeconds: Long): String {
+    if (expSeconds == null) return "—"
+    val remaining = expSeconds - nowSeconds
+    if (remaining <= 0) return "Expired"
+    val minutes = remaining / 60
+    val seconds = remaining % 60
+    return if (remaining < 3600) {
+        "${minutes}m ${seconds}s"
+    } else {
+        val hours = remaining / 3600
+        val remMinutes = (remaining % 3600) / 60
+        "${hours}h ${remMinutes}m"
+    }
+}
+
+private fun userDisplayName(user: User?): String {
+    if (user == null) return "Guest"
+    val given = user.claims?.get("given_name") as? String ?: ""
+    val family = user.claims?.get("family_name") as? String ?: ""
+    val full = listOf(given, family).filter { it.isNotEmpty() }.joinToString(" ")
+    return full.ifEmpty { user.displayName?.takeIf { it.isNotEmpty() } ?: user.username ?: user.email?.substringBefore("@") ?: "User" }
+}
+
+private fun userInitials(displayName: String): String {
+    val words = displayName.trim().split(" ").filter { it.isNotEmpty() }
+    return when {
+        words.size >= 2 -> "${words[0].first().uppercaseChar()}${words[1].first().uppercaseChar()}"
+        words.size == 1 -> words[0].first().uppercaseChar().toString()
+        else -> "U"
     }
 }

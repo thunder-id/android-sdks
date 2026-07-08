@@ -1,9 +1,27 @@
+/*
+ * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
+ *
+ * WSO2 LLC. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package dev.thunderid.android
 
 /**
  * Typed error codes for all ThunderID SDK error conditions (spec §10.2).
  */
-enum class IAMErrorCode(val value: String) {
+enum class ThunderIDErrorCode(val value: String) {
     // Configuration
     SDK_NOT_INITIALIZED("SDK_NOT_INITIALIZED"),
     ALREADY_INITIALIZED("ALREADY_INITIALIZED"),
@@ -36,16 +54,16 @@ enum class IAMErrorCode(val value: String) {
     NETWORK_ERROR("NETWORK_ERROR"),
     REQUEST_TIMEOUT("REQUEST_TIMEOUT"),
     SERVER_ERROR("SERVER_ERROR"),
-    UNKNOWN_ERROR("UNKNOWN_ERROR");
+    UNKNOWN_ERROR("UNKNOWN_ERROR"),
+    ;
 
     companion object {
-        fun fromValue(value: String): IAMErrorCode =
-            entries.firstOrNull { it.value == value } ?: UNKNOWN_ERROR
+        fun fromValue(value: String): ThunderIDErrorCode = entries.firstOrNull { it.value == value } ?: UNKNOWN_ERROR
     }
 }
 
 class IAMException(
-    val code: IAMErrorCode,
+    val code: ThunderIDErrorCode,
     message: String,
-    cause: Throwable? = null
+    cause: Throwable? = null,
 ) : Exception("[$code] $message", cause)

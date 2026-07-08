@@ -1,0 +1,5 @@
+THUNDERID_BASE_URL=https://your-tenant.thunderid.dev
+THUNDERID_CLIENT_ID=your-client-id
+THUNDERID_APPLICATION_ID=your-application-id
+THUNDERID_AFTER_SIGN_IN_URL=
+THUNDERID_AFTER_SIGN_OUT_URL=

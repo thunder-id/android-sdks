@@ -1,9 +1,39 @@
+/*
+ * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
+ *
+ * WSO2 LLC. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package dev.thunderid.compose.components.presentation.user
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,8 +65,9 @@ fun UserProfile(
                         BasicTextField(
                             value = fields[key]?.value ?: "",
                             onValueChange = { fields[key]?.value = it },
-                            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp)
-                                .semantics { contentDescription = key },
+                            modifier =
+                                Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp)
+                                    .semantics { contentDescription = key },
                         )
                     }
                     BaseSignInButton(
@@ -65,18 +96,22 @@ fun BaseUserProfile(
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        isLoading = true; error = null
+        isLoading = true
+        error = null
         try {
             val p = thunderState.client.getUserProfile()
             editableKeys.forEach { key -> fields[key]?.value = p.claims[key]?.toString() ?: "" }
             profile = p
-        } catch (e: Exception) { error = e.message }
+        } catch (e: Exception) {
+            error = e.message
+        }
         isLoading = false
     }
 
     val save = {
         scope.launch {
-            isLoading = true; error = null
+            isLoading = true
+            error = null
             try {
                 thunderState.client.updateUserProfile(fields.mapValues { it.value.value })
                 isLoading = false

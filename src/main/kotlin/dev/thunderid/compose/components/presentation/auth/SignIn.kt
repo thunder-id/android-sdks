@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -110,7 +111,11 @@ fun SignIn(
                 OutlinedTextField(
                     value = signInState.fieldValue(input.name),
                     onValueChange = { signInState.setField(input.name, it) },
-                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = input.name },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag("thunderid-field-${input.name}")
+                            .semantics { contentDescription = input.name },
                     placeholder = { Text(input.name) },
                     visualTransformation =
                         if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
@@ -123,7 +128,7 @@ fun SignIn(
                 Button(
                     onClick = { signInState.submit(action.id ?: action.ref ?: "") },
                     enabled = !signInState.isLoading,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("thunderid-action-${action.id ?: action.ref}"),
                 ) {
                     Text(action.label ?: i18n.resolve("signIn.submit"))
                 }

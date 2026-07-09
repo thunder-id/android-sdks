@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -34,11 +35,12 @@ import dev.thunderid.compose.LocalThunderID
 @Composable
 fun SignInButton(
     modifier: Modifier = Modifier,
+    testTag: String? = null,
     onTap: (() -> Unit)? = null,
 ) {
     val state = LocalThunderID.current
     val label = state.i18n.resolve("signIn.button")
-    BaseSignInButton(label = label, isLoading = state.isLoading, modifier = modifier) {
+    BaseSignInButton(label = label, isLoading = state.isLoading, modifier = modifier, testTag = testTag) {
         onTap?.invoke()
     }
 }
@@ -49,6 +51,7 @@ fun BaseSignInButton(
     label: String,
     isLoading: Boolean = false,
     modifier: Modifier = Modifier,
+    testTag: String? = null,
     onClick: () -> Unit,
 ) {
     Box(
@@ -56,6 +59,7 @@ fun BaseSignInButton(
         modifier =
             modifier
                 .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
+                .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
                 .semantics { contentDescription = label }
                 .then(if (!isLoading) Modifier.clickable(onClick = onClick) else Modifier),
     ) {

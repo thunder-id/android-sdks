@@ -40,10 +40,12 @@ import dev.thunderid.compose.i18n.ThunderIDI18n
 fun ThunderIDProvider(
     config: ThunderIDConfig,
     client: ThunderIDClient = remember { ThunderIDClient() },
-    i18n: ThunderIDI18n = remember { ThunderIDI18n() },
+    i18n: ThunderIDI18n? = null,
     content: @Composable () -> Unit,
 ) {
-    val state = remember(client, i18n) { ThunderIDState(client, i18n) }
+    val resolvedI18n =
+        i18n ?: remember(config.vendor) { ThunderIDI18n(storageKey = "${config.vendor}_locale") }
+    val state = remember(client, resolvedI18n) { ThunderIDState(client, resolvedI18n) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(config) {

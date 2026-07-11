@@ -46,7 +46,17 @@ data class ThunderIDConfig(
     val instanceId: Int? = null,
     // Development only — bypasses TLS certificate verification. Never use in production.
     val allowInsecureConnections: Boolean = false,
-)
+    /**
+     * Vendor/brand namespace used to derive default storage identifiers (e.g. EncryptedSharedPreferences file
+     * name). Override this when white-labeling the SDK under a different brand. Defaults to
+     * [DEFAULT_VENDOR].
+     */
+    val vendor: String = DEFAULT_VENDOR,
+) {
+    companion object {
+        const val DEFAULT_VENDOR: String = "thunderid"
+    }
+}
 
 data class TokenValidationConfig(
     val validate: Boolean = true,

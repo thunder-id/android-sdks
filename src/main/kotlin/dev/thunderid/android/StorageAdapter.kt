@@ -41,7 +41,10 @@ interface StorageAdapter {
 /**
  * Default storage using Android EncryptedSharedPreferences backed by the Android Keystore (spec §11.1).
  */
-class EncryptedStorageAdapter(context: Context) : StorageAdapter {
+class EncryptedStorageAdapter(
+    context: Context,
+    prefsName: String = "dev.thunderid.sdk.prefs",
+) : StorageAdapter {
     private val prefs =
         run {
             val masterKey =
@@ -50,7 +53,7 @@ class EncryptedStorageAdapter(context: Context) : StorageAdapter {
                     .build()
             EncryptedSharedPreferences.create(
                 context,
-                "dev.thunderid.sdk.prefs",
+                prefsName,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,

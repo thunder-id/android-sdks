@@ -164,7 +164,7 @@ fun BaseSignIn(
                 val response = thunderState.client.signIn(payload = payload, request = request)
                 handleSignInResponse(response, signInState, thunderState, onComplete, onError)
             } catch (e: Exception) {
-                android.util.Log.e("ThunderID:SignIn", "Flow submit failed", e)
+                android.util.Log.e("SignInFlow", "Flow submit failed", e)
                 signInState.error = e.message
                 onError?.invoke(e.message ?: "Sign-in failed")
             } finally {
@@ -180,13 +180,13 @@ fun BaseSignIn(
             val payload = EmbeddedSignInPayload(actionId = "__initiate__")
             val response = thunderState.client.signIn(payload = payload, request = request)
             android.util.Log.d(
-                "ThunderID:SignIn",
+                "SignInFlow",
                 "status=${response.flowStatus} inputs=${response.data?.inputs?.size} " +
                     "actions=${response.data?.actions?.size} data=${response.data}",
             )
             handleSignInResponse(response, signInState, thunderState, onComplete, onError)
         } catch (e: Exception) {
-            android.util.Log.e("ThunderID:SignIn", "Flow initiation failed", e)
+            android.util.Log.e("SignInFlow", "Flow initiation failed", e)
             signInState.error = e.message
             onError?.invoke(e.message ?: "Sign-in failed")
         } finally {

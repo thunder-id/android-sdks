@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.thunderid"
-version = "0.0.1"
+version = "0.1.0"
 
 android {
     namespace = "dev.thunderid.android"
@@ -60,7 +60,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "dev.thunderid"
             artifactId = "android"
-            version = "0.0.1"
+            version = "0.1.0"
         }
     }
 }

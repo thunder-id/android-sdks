@@ -198,9 +198,7 @@ fun AuthScreen(applicationId: String) {
                     onForgotPassword = { showSheet = "recover" },
                     onSignUp = { showSheet = "signup" },
                 )
-                "signup" -> SignUpSheetContent(
-                    onSignIn = { showSheet = "login" },
-                )
+                "signup" -> SignUpSheetContent()
                 "recover" -> RecoverSheetContent(
                     onBackToSignIn = { showSheet = "login" },
                 )
@@ -251,7 +249,7 @@ private fun LoginSheetContent(
 }
 
 @Composable
-private fun SignUpSheetContent(onSignIn: () -> Unit) {
+private fun SignUpSheetContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -262,13 +260,6 @@ private fun SignUpSheetContent(onSignIn: () -> Unit) {
         SheetTitle("Create account")
         Spacer(Modifier.height(8.dp))
         SignUp(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Already have an account?", fontSize = 14.sp, color = TextMuted)
-            TextButton(onClick = onSignIn) {
-                Text("Sign in", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
     }
 }
 

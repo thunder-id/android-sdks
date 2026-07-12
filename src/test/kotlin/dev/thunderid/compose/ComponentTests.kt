@@ -80,10 +80,16 @@ class ComponentTests {
     fun `DefaultStrings contains all expected keys`() {
         val required =
             listOf(
-                "signIn.button", "signOut.button", "signUp.button",
-                "userProfile.title", "userProfile.save",
-                "organizationList.empty", "createOrganization.submit",
-                "languageSwitcher.title", "acceptInvite.submit", "inviteUser.submit",
+                "signIn.button",
+                "signOut.button",
+                "signUp.button",
+                "userProfile.title",
+                "userProfile.save",
+                "organizationList.empty",
+                "createOrganization.submit",
+                "languageSwitcher.title",
+                "acceptInvite.submit",
+                "inviteUser.submit",
             )
         required.forEach { key ->
             assertNotNull("Missing default string for key: $key", DefaultStrings.all[key])

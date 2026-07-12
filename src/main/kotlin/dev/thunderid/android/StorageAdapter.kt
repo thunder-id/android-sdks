@@ -48,7 +48,8 @@ class EncryptedStorageAdapter(
     private val prefs =
         run {
             val masterKey =
-                MasterKey.Builder(context)
+                MasterKey
+                    .Builder(context)
                     .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                     .build()
             EncryptedSharedPreferences.create(

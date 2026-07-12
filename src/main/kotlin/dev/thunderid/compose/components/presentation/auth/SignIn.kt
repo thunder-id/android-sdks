@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -51,6 +52,7 @@ import dev.thunderid.android.FlowAction
 import dev.thunderid.android.FlowInput
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowType
+import dev.thunderid.android.IAMException
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
 import kotlinx.coroutines.launch
@@ -82,6 +84,14 @@ class SignInState {
     }
 
     fun fields(): Map<String, String> = fieldValues.toMap()
+
+    /**
+     * Drops all entered field values so the form does not keep input around after it is
+     * done with it. Called on successful completion and when the form leaves composition.
+     */
+    internal fun clearFields() {
+        fieldValues.clear()
+    }
 
     fun submit(actionId: String) = onSubmit(actionId)
 
@@ -157,14 +167,16 @@ fun BaseSignIn(
             try {
                 val payload =
                     EmbeddedSignInPayload(
-                        flowId = signInState.flowId, actionId = actionId, inputs = signInState.fields(),
+                        flowId = signInState.flowId,
+                        actionId = actionId,
+                        inputs = signInState.fields(),
                         challengeToken = signInState.challengeToken,
                     )
                 val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
                 val response = thunderState.client.signIn(payload = payload, request = request)
                 handleSignInResponse(response, signInState, thunderState, onComplete, onError)
             } catch (e: Exception) {
-                android.util.Log.e("SignInFlow", "Flow submit failed", e)
+                android.util.Log.e("SignInFlow", "Sign-in submit failed (${diagnosticLabel(e)})")
                 signInState.error = e.message
                 onError?.invoke(e.message ?: "Sign-in failed")
             } finally {
@@ -181,17 +193,21 @@ fun BaseSignIn(
             val response = thunderState.client.signIn(payload = payload, request = request)
             android.util.Log.d(
                 "SignInFlow",
-                "status=${response.flowStatus} inputs=${response.data?.inputs?.size} " +
-                    "actions=${response.data?.actions?.size} data=${response.data}",
+                "Flow initiated: status=${response.flowStatus} " +
+                    "inputs=${response.data?.inputs?.size ?: 0} actions=${response.data?.actions?.size ?: 0}",
             )
             handleSignInResponse(response, signInState, thunderState, onComplete, onError)
         } catch (e: Exception) {
-            android.util.Log.e("SignInFlow", "Flow initiation failed", e)
+            android.util.Log.e("SignInFlow", "Sign-in initiation failed (${diagnosticLabel(e)})")
             signInState.error = e.message
             onError?.invoke(e.message ?: "Sign-in failed")
         } finally {
             signInState.isLoading = false
         }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { signInState.clearFields() }
     }
 
     Box(modifier = modifier) { content(signInState) }
@@ -206,10 +222,15 @@ private suspend fun handleSignInResponse(
 ) {
     when (response.flowStatus) {
         FlowStatus.COMPLETE -> {
+            signInState.clearFields()
             thunderState.refresh()
             onComplete?.invoke()
         }
-        FlowStatus.PROMPT_ONLY, FlowStatus.INCOMPLETE -> signInState.update(response)
+
+        FlowStatus.PROMPT_ONLY, FlowStatus.INCOMPLETE -> {
+            signInState.update(response)
+        }
+
         FlowStatus.ERROR -> {
             val msg = response.failureReason ?: "Sign-in failed"
             signInState.error = msg
@@ -217,3 +238,14 @@ private suspend fun handleSignInResponse(
         }
     }
 }
+
+/**
+ * Produces a concise diagnostic label for logging: the typed error code for an
+ * [IAMException], or the exception class name otherwise. Keeps log output compact and
+ * stable instead of dumping full exception detail.
+ */
+private fun diagnosticLabel(e: Throwable): String =
+    when (e) {
+        is IAMException -> "code=${e.code.value}"
+        else -> "type=${e.javaClass.simpleName}"
+    }

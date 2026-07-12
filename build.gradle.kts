@@ -2,7 +2,7 @@ plugins {
     id("com.android.library") version "8.2.2"
     id("org.jetbrains.kotlin.android") version "1.9.22"
     id("maven-publish")
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.1"
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
 group = "dev.thunderid"
@@ -34,6 +34,11 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+ktlint {
+    // Pin the ktlint engine version used by the plugin.
+    version.set("1.8.0")
 }
 
 dependencies {

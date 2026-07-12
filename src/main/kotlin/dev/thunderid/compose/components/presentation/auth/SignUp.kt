@@ -105,7 +105,9 @@ fun SignUp(
                     value = state.fieldValue(input.name),
                     onValueChange = { state.setField(input.name, it) },
                     modifier =
-                        Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp)
+                        Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 44.dp)
                             .semantics { contentDescription = input.name },
                 )
             }
@@ -182,8 +184,13 @@ private suspend fun handleSignUpResponse(
             thunderState.refresh()
             onComplete?.invoke()
         }
-        FlowStatus.PROMPT_ONLY -> state.update(response)
+
+        FlowStatus.PROMPT_ONLY -> {
+            state.update(response)
+        }
+
         FlowStatus.INCOMPLETE -> {}
+
         FlowStatus.ERROR -> {
             val msg = response.failureReason ?: "Sign-up failed"
             state.error = msg

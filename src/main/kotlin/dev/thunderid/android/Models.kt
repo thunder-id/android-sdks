@@ -80,7 +80,9 @@ data class EmbeddedFlowRequestConfig(
     val flowType: FlowType = FlowType.AUTHENTICATION,
 )
 
-enum class FlowType(val value: String) {
+enum class FlowType(
+    val value: String,
+) {
     AUTHENTICATION("AUTHENTICATION"),
     REGISTRATION("REGISTRATION"),
     PASSWORD_RECOVERY("PASSWORD_RECOVERY"),

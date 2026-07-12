@@ -32,7 +32,9 @@ private object StoreKey {
 /**
  * Persists and retrieves the token set using the configured StorageAdapter.
  */
-internal class TokenStore(private val storage: StorageAdapter) {
+internal class TokenStore(
+    private val storage: StorageAdapter,
+) {
     fun save(response: TokenResponse) {
         storage.store(StoreKey.ACCESS_TOKEN, response.accessToken)
         response.refreshToken?.let { storage.store(StoreKey.REFRESH_TOKEN, it) }

@@ -58,15 +58,23 @@ fun UserProfile(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             BasicText(i18n.resolve("userProfile.title"))
             when {
-                isLoading && profile == null -> BasicText(i18n.resolve("userProfile.loading"))
-                error != null -> BasicText(error)
+                isLoading && profile == null -> {
+                    BasicText(i18n.resolve("userProfile.loading"))
+                }
+
+                error != null -> {
+                    BasicText(error)
+                }
+
                 else -> {
                     editableKeys.forEach { key ->
                         BasicTextField(
                             value = fields[key]?.value ?: "",
                             onValueChange = { fields[key]?.value = it },
                             modifier =
-                                Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp)
+                                Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 44.dp)
                                     .semantics { contentDescription = key },
                         )
                     }

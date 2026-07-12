@@ -25,7 +25,9 @@ import dev.thunderid.android.http.HttpClient
 /**
  * Drives the ThunderID Flow Execution API for app-native sign-in, sign-up, and recovery (spec §6.1–6.3).
  */
-internal class FlowExecutionClient(private val httpClient: HttpClient) {
+internal class FlowExecutionClient(
+    private val httpClient: HttpClient,
+) {
     suspend fun initiate(
         applicationId: String,
         flowType: FlowType,

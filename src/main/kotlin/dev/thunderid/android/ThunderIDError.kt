@@ -21,7 +21,9 @@ package dev.thunderid.android
 /**
  * Typed error codes for all ThunderID SDK error conditions (spec §10.2).
  */
-enum class ThunderIDErrorCode(val value: String) {
+enum class ThunderIDErrorCode(
+    val value: String,
+) {
     // Configuration
     SDK_NOT_INITIALIZED("SDK_NOT_INITIALIZED"),
     ALREADY_INITIALIZED("ALREADY_INITIALIZED"),

@@ -61,7 +61,7 @@ class ThunderIDClient {
         tokenStore = store
         tokenValidator = TokenValidator(jwks, config)
         tokenRefresher = TokenRefresher(http, store)
-        flowClient = FlowExecutionClient(http)
+        flowClient = FlowExecutionClient(http, config.flowSecret)
         http.setAccessTokenProvider {
             val clientId =
                 this.config?.clientId

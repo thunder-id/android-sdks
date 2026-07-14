@@ -27,11 +27,13 @@ android {
         val appId = config("THUNDERID_APPLICATION_ID")
         val afterSignInUrl = config("THUNDERID_AFTER_SIGN_IN_URL")
         val afterSignOutUrl = config("THUNDERID_AFTER_SIGN_OUT_URL")
+        val flowSecret = config("THUNDERID_FLOW_SECRET")
         buildConfigField("String", "THUNDERID_BASE_URL", "\"$baseUrl\"")
         buildConfigField("String", "THUNDERID_CLIENT_ID", "\"$clientId\"")
         buildConfigField("String", "THUNDERID_APPLICATION_ID", "\"$appId\"")
         buildConfigField("String", "THUNDERID_AFTER_SIGN_IN_URL", "\"$afterSignInUrl\"")
         buildConfigField("String", "THUNDERID_AFTER_SIGN_OUT_URL", "\"$afterSignOutUrl\"")
+        buildConfigField("String", "THUNDERID_FLOW_SECRET", "\"$flowSecret\"")
     }
 
     buildFeatures {

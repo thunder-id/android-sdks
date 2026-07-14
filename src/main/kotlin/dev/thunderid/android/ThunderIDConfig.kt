@@ -39,6 +39,7 @@ data class ThunderIDConfig(
     // Application Identity
     val applicationId: String? = null,
     val organizationHandle: String? = null,
+    val flowSecret: String? = null,
     // Token Validation
     val tokenValidation: TokenValidationConfig = TokenValidationConfig(),
     // Storage & Platform

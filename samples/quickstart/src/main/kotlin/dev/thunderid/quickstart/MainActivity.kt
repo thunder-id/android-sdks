@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
             afterSignInUrl = BuildConfig.THUNDERID_AFTER_SIGN_IN_URL.takeIf { it.isNotBlank() },
             afterSignOutUrl = BuildConfig.THUNDERID_AFTER_SIGN_OUT_URL.takeIf { it.isNotBlank() },
             applicationId = BuildConfig.THUNDERID_APPLICATION_ID.takeIf { it.isNotBlank() },
+            flowSecret = BuildConfig.THUNDERID_FLOW_SECRET.takeIf { it.isNotBlank() },
             storage = EncryptedStorageAdapter(this),
             allowInsecureConnections = BuildConfig.DEBUG,
         )

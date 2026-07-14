@@ -27,6 +27,7 @@ import dev.thunderid.android.http.HttpClient
  */
 internal class FlowExecutionClient(
     private val httpClient: HttpClient,
+    private val flowSecret: String? = null,
 ) {
     suspend fun initiate(
         applicationId: String,
@@ -38,7 +39,7 @@ internal class FlowExecutionClient(
                 "flowType" to flowType.value,
                 "verbose" to true,
             )
-        return httpClient.post("/flow/execute", body, requiresAuth = false)
+        return httpClient.post("/flow/execute", body, requiresAuth = false, headers = flowSecretHeaders())
     }
 
     suspend fun submit(
@@ -50,8 +51,10 @@ internal class FlowExecutionClient(
         val body = submitBody(flowId, actionId, challengeToken).toMutableMap()
         body["verbose"] = true
         if (inputs.isNotEmpty()) body["inputs"] = inputs
-        return httpClient.post("/flow/execute", body, requiresAuth = false)
+        return httpClient.post("/flow/execute", body, requiresAuth = false, headers = flowSecretHeaders())
     }
+
+    private fun flowSecretHeaders(): Map<String, String> = flowSecret?.let { mapOf("Flow-Secret" to it) } ?: emptyMap()
 
     internal fun submitBody(
         flowId: String,

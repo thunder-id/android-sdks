@@ -103,7 +103,7 @@ enum class FlowStatus { PROMPT_ONLY, INCOMPLETE, COMPLETE, ERROR }
 data class FlowStepData(
     val actions: List<FlowAction>? = null,
     val inputs: List<FlowInput>? = null,
-    val meta: Map<String, Any?>? = null,
+    val meta: FlowMeta? = null,
 )
 
 data class FlowAction(
@@ -112,10 +112,31 @@ data class FlowAction(
     val nextNode: String? = null,
     val type: String? = null,
     val label: String? = null,
+    val eventType: String? = null,
+    val variant: String? = null,
+    @SerializedName("image") val icon: String? = null,
 )
 
 data class FlowInput(
     @SerializedName("identifier") val name: String,
     val type: String? = null,
     val required: Boolean? = null,
+)
+
+data class FlowMeta(
+    val components: List<FlowComponent>? = null,
+)
+
+data class FlowComponent(
+    val id: String? = null,
+    val ref: String? = null,
+    val type: String? = null,
+    val category: String? = null,
+    val label: String? = null,
+    val placeholder: String? = null,
+    val variant: String? = null,
+    val eventType: String? = null,
+    val align: String? = null,
+    @SerializedName("image") val icon: String? = null,
+    val components: List<FlowComponent>? = null,
 )

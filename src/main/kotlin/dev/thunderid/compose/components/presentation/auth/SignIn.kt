@@ -231,13 +231,17 @@ fun FlowComponentView(
 ) {
     val resolver = signInState.templateResolver
     when {
-        component.type == "DIVIDER" -> DividerRow(component = component, resolver = resolver, modifier = modifier)
+        component.type == "DIVIDER" -> {
+            DividerRow(component = component, resolver = resolver, modifier = modifier)
+        }
+
         component.type == "RICH_TEXT" -> {
             val html = resolver?.resolve(component.label) ?: component.label ?: ""
             if (html.isNotBlank()) {
                 RichTextView(html = html, modifier = modifier)
             }
         }
+
         component.type == "TEXT" -> {
             val text = resolver?.resolve(component.label) ?: component.label ?: ""
             if (text.isNotBlank()) {
@@ -254,6 +258,7 @@ fun FlowComponentView(
                 )
             }
         }
+
         component.type == "BLOCK" -> {
             Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 component.components?.forEach { child ->
@@ -266,13 +271,18 @@ fun FlowComponentView(
                 }
             }
         }
+
         component.type == "ACTION" -> {
             ActionComponentView(component = component, signInState = signInState, i18n = i18n, modifier = modifier)
         }
+
         component.type?.endsWith("_INPUT") == true -> {
             FieldComponentView(component = component, signInState = signInState, modifier = modifier)
         }
-        else -> Unit
+
+        else -> {
+            Unit
+        }
     }
 }
 
@@ -329,27 +339,32 @@ private fun ActionComponentView(
 
     if (isTrigger) {
         when {
-            identity.contains("google") ->
+            identity.contains("google") -> {
                 GoogleButton(
                     label = label,
                     isLoading = signInState.isLoading,
                     onClick = { signInState.submit(actionId) },
                     modifier = taggedModifier,
                 )
-            identity.contains("github") ->
+            }
+
+            identity.contains("github") -> {
                 GitHubButton(
                     label = label,
                     isLoading = signInState.isLoading,
                     onClick = { signInState.submit(actionId) },
                     modifier = taggedModifier,
                 )
-            else ->
+            }
+
+            else -> {
                 OutlinedTriggerButton(
                     label = label,
                     isLoading = signInState.isLoading,
                     onClick = { signInState.submit(actionId) },
                     modifier = taggedModifier,
                 )
+            }
         }
     } else {
         Button(
@@ -491,7 +506,7 @@ fun BaseSignIn(
                 val metaMap = thunderState.client.getFlowMeta(applicationId)
                 signInState.templateResolver = FlowTemplateResolver(metaMap)
             } catch (e: Exception) {
-                android.util.Log.w("SignInFlow", "Flow meta fetch failed", e)
+                android.util.Log.w("SignInFlow", "Flow meta fetch failed (${diagnosticLabel(e)})")
             }
         } catch (e: Exception) {
             android.util.Log.e("SignInFlow", "Sign-in initiation failed (${diagnosticLabel(e)})")

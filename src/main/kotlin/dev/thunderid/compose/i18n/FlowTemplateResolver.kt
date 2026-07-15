@@ -31,7 +31,9 @@ package dev.thunderid.compose.i18n
  *
  * Any unrecognized expression is left unchanged.
  */
-class FlowTemplateResolver(private val meta: Map<String, Any?>) {
+class FlowTemplateResolver(
+    private val meta: Map<String, Any?>,
+) {
     companion object {
         private val TEMPLATE_REGEX = Regex("\\{\\{\\s*(.*?)\\s*\\}\\}")
     }

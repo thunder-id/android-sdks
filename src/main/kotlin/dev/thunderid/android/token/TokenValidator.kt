@@ -56,12 +56,18 @@ internal class TokenValidator(
         config.clientId?.let { clientId ->
             val audValid =
                 when {
-                    payload.optString("aud").isNotEmpty() -> payload.optString("aud") == clientId
+                    payload.optString("aud").isNotEmpty() -> {
+                        payload.optString("aud") == clientId
+                    }
+
                     payload.optJSONArray("aud") != null -> {
                         val arr = payload.getJSONArray("aud")
                         (0 until arr.length()).any { arr.getString(it) == clientId }
                     }
-                    else -> false
+
+                    else -> {
+                        false
+                    }
                 }
             if (!audValid) throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "ID token aud mismatch")
         }
@@ -124,10 +130,12 @@ internal class TokenValidator(
             val n = BigInteger(1, Base64.decode(jwk.n?.replace('-', '+')?.replace('_', '/') ?: return false, Base64.DEFAULT))
             val e = BigInteger(1, Base64.decode(jwk.e?.replace('-', '+')?.replace('_', '/') ?: return false, Base64.DEFAULT))
             val publicKey = KeyFactory.getInstance("RSA").generatePublic(RSAPublicKeySpec(n, e))
-            Signature.getInstance("SHA256withRSA").apply {
-                initVerify(publicKey)
-                update(signingInput)
-            }.verify(signature)
+            Signature
+                .getInstance("SHA256withRSA")
+                .apply {
+                    initVerify(publicKey)
+                    update(signingInput)
+                }.verify(signature)
         } catch (_: Exception) {
             false
         }

@@ -53,7 +53,8 @@ fun UserDropdown(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier =
-                    Modifier.size(44.dp)
+                    Modifier
+                        .size(44.dp)
                         .clickable { toggle() }
                         .semantics { contentDescription = user?.displayName ?: i18n.resolve("user.anonymous") },
             ) {

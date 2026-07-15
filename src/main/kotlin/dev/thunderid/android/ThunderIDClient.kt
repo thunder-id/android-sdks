@@ -117,10 +117,14 @@ class ThunderIDClient {
         val params =
             StringBuilder("${cfg.baseUrl}/oauth2/authorize")
                 .append("?response_type=code")
-                .append("&client_id=").append(clientId)
-                .append("&redirect_uri=").append(cfg.afterSignInUrl ?: "")
-                .append("&scope=").append(cfg.scopes.joinToString(" "))
-                .append("&code_challenge=").append(challenge)
+                .append("&client_id=")
+                .append(clientId)
+                .append("&redirect_uri=")
+                .append(cfg.afterSignInUrl ?: "")
+                .append("&scope=")
+                .append(cfg.scopes.joinToString(" "))
+                .append("&code_challenge=")
+                .append(challenge)
                 .append("&code_challenge_method=S256")
         options?.prompt?.let { params.append("&prompt=").append(it) }
         options?.loginHint?.let { params.append("&login_hint=").append(it) }
@@ -273,7 +277,9 @@ class ThunderIDClient {
         val path = "/flow/meta?id=$applicationId&type=APP&language=$language"
         val json: com.google.gson.JsonObject = httpClient!!.get(path, requiresAuth = false)
         val type = object : com.google.gson.reflect.TypeToken<Map<String, Any?>>() {}.type
-        return com.google.gson.Gson().fromJson(json, type)
+        return com.google.gson
+            .Gson()
+            .fromJson(json, type)
     }
 
     // MARK: - Private helpers

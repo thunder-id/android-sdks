@@ -96,7 +96,9 @@ class ThunderIDClientTest {
 
     @Test
     fun `PKCEManager generates S256 challenge`() {
-        val manager = dev.thunderid.android.auth.PKCEManager()
+        val manager =
+            dev.thunderid.android.auth
+                .PKCEManager()
         val (verifier, challenge) = manager.generate()
         assertTrue(verifier.isNotEmpty())
         assertTrue(challenge.isNotEmpty())
@@ -109,7 +111,9 @@ class ThunderIDClientTest {
 
     @Test
     fun `PKCEManager clears verifier`() {
-        val manager = dev.thunderid.android.auth.PKCEManager()
+        val manager =
+            dev.thunderid.android.auth
+                .PKCEManager()
         manager.generate()
         assertNotNull(manager.codeVerifier)
         manager.clearVerifier()
@@ -120,7 +124,9 @@ class ThunderIDClientTest {
 
     @Test
     fun `TokenStore saves and retrieves tokens`() {
-        val store = dev.thunderid.android.token.TokenStore(storage)
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
         val response =
             TokenResponse(
                 accessToken = "access123",
@@ -137,21 +143,27 @@ class ThunderIDClientTest {
 
     @Test
     fun `TokenStore isNearExpiry when expires in 30s`() {
-        val store = dev.thunderid.android.token.TokenStore(storage)
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
         store.save(TokenResponse(accessToken = "tok", tokenType = "Bearer", expiresIn = 30))
         assertTrue(store.isNearExpiry())
     }
 
     @Test
     fun `TokenStore not near expiry when expires in 3600s`() {
-        val store = dev.thunderid.android.token.TokenStore(storage)
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
         store.save(TokenResponse(accessToken = "tok", tokenType = "Bearer", expiresIn = 3600))
         assertFalse(store.isNearExpiry())
     }
 
     @Test
     fun `TokenStore clear removes all tokens`() {
-        val store = dev.thunderid.android.token.TokenStore(storage)
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
         store.save(TokenResponse(accessToken = "tok", tokenType = "Bearer"))
         store.clear()
         assertNull(store.accessToken())

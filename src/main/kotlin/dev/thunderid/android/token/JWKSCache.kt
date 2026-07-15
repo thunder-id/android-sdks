@@ -29,12 +29,16 @@ internal data class JWK(
     val e: String? = null,
 )
 
-internal data class JWKSResponse(val keys: List<JWK>)
+internal data class JWKSResponse(
+    val keys: List<JWK>,
+)
 
 /**
  * Fetches and caches the server JWKS. Supports key rotation (spec §11.4).
  */
-internal class JWKSCache(private val httpClient: HttpClient) {
+internal class JWKSCache(
+    private val httpClient: HttpClient,
+) {
     private var cachedKeys: List<JWK> = emptyList()
     private var cacheExpiryMs: Long = 0L
     private val minCacheTtlMs: Long = 5 * 60 * 1000L // 5 minutes

@@ -98,22 +98,39 @@ internal class HttpClient(
                 }.getOrDefault("")
 
             when (statusCode) {
-                in 200..299 -> parseResponse(responseBody)
+                in 200..299 -> {
+                    parseResponse(responseBody)
+                }
+
                 400 -> {
                     val msg = runCatching { JSONObject(responseBody).optString("message", "Bad request") }.getOrDefault("Bad request")
                     throw IAMException(ThunderIDErrorCode.INVALID_INPUT, msg)
                 }
-                401 -> throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "Unauthorized")
-                409 -> throw IAMException(ThunderIDErrorCode.USER_ALREADY_EXISTS, "Conflict")
-                in 500..599 -> throw IAMException(ThunderIDErrorCode.SERVER_ERROR, "Server error: $statusCode")
-                else -> throw IAMException(ThunderIDErrorCode.UNKNOWN_ERROR, "Unexpected status: $statusCode")
+
+                401 -> {
+                    throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "Unauthorized")
+                }
+
+                409 -> {
+                    throw IAMException(ThunderIDErrorCode.USER_ALREADY_EXISTS, "Conflict")
+                }
+
+                in 500..599 -> {
+                    throw IAMException(ThunderIDErrorCode.SERVER_ERROR, "Server error: $statusCode")
+                }
+
+                else -> {
+                    throw IAMException(ThunderIDErrorCode.UNKNOWN_ERROR, "Unexpected status: $statusCode")
+                }
             }
         }
 
     @Suppress("UNCHECKED_CAST")
     private inline fun <reified T : Any> parseResponse(body: String): T {
         if (T::class == Unit::class) return Unit as T
-        return com.google.gson.Gson().fromJson(body, T::class.java)
+        return com.google.gson
+            .Gson()
+            .fromJson(body, T::class.java)
     }
 
     private fun insecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {

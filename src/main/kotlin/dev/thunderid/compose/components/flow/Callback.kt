@@ -42,15 +42,22 @@ fun Callback(
 ) {
     val state = LocalThunderID.current
     BaseCallback(url = url, modifier = modifier, onResult = { result ->
-        result.onSuccess {
-            onComplete?.invoke()
-        }.onFailure { e ->
-            onError?.invoke(e.message ?: "Callback failed")
-        }
+        result
+            .onSuccess {
+                onComplete?.invoke()
+            }.onFailure { e ->
+                onError?.invoke(e.message ?: "Callback failed")
+            }
     }) { isLoading, error ->
         when {
-            isLoading -> BasicText(state.i18n.resolve("callback.loading"))
-            error != null -> BasicText(error)
+            isLoading -> {
+                BasicText(state.i18n.resolve("callback.loading"))
+            }
+
+            error != null -> {
+                BasicText(error)
+            }
+
             else -> {}
         }
     }

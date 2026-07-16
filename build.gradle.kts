@@ -34,6 +34,10 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    publishing {
+        singleVariant("release")
+    }
 }
 
 ktlint {
@@ -61,12 +65,15 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
 }
 
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId = "dev.thunderid"
-            artifactId = "android"
-            version = "0.1.0"
+afterEvaluate {
+    publishing {
+        publications {
+            register<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "dev.thunderid"
+                artifactId = "android"
+                version = "0.1.0"
+            }
         }
     }
 }

@@ -128,9 +128,18 @@ class SignInState {
 }
 
 /**
+ * The real Flow Execution API identifies the same node with `ref` on the flat `data.actions`
+ * array but `id` on the matching node inside `data.meta.components` — the two never share a
+ * field name, so callers must compare whichever identifier each side actually populated.
+ */
+private fun FlowAction.identifierKey(): String? = ref ?: id
+
+private fun FlowComponent.identifierKey(): String? = ref ?: id
+
+/**
  * Fills in any `null` presentation fields on the flat `actions` array (label, eventType,
- * variant, icon) from the matching `ACTION`-typed node in the component tree, matched by `ref`
- * (falling back to `id`). Explicit flat values always win.
+ * variant, icon) from the matching `ACTION`-typed node in the component tree, matched by
+ * whichever of `ref`/`id` each side populated. Explicit flat values always win.
  */
 private fun enrichActions(
     actions: List<FlowAction>,
@@ -138,10 +147,8 @@ private fun enrichActions(
 ): List<FlowAction> {
     val actionComponents = flattenActionComponents(components)
     return actions.map { action ->
-        val match =
-            actionComponents.firstOrNull {
-                (it.ref != null && it.ref == action.ref) || (it.id != null && it.id == action.id)
-            } ?: return@map action
+        val key = action.identifierKey() ?: return@map action
+        val match = actionComponents.firstOrNull { it.identifierKey() == key } ?: return@map action
         action.copy(
             label = action.label ?: match.label,
             eventType = action.eventType ?: match.eventType,
@@ -323,10 +330,8 @@ private fun ActionComponentView(
     i18n: ThunderIDI18n,
     modifier: Modifier = Modifier,
 ) {
-    val action =
-        signInState.actions.firstOrNull {
-            (it.ref != null && it.ref == component.ref) || (it.id != null && it.id == component.id)
-        } ?: return
+    val componentKey = component.identifierKey() ?: return
+    val action = signInState.actions.firstOrNull { it.identifierKey() == componentKey } ?: return
     val actionId = action.id ?: action.ref ?: return
     val resolver = signInState.templateResolver
     val label =

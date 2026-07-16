@@ -18,13 +18,13 @@
 
 package dev.thunderid.compose.components.actions.adapters
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import dev.thunderid.android.R
 
 /**
  * "Continue with GitHub" federated sign-in trigger, styled to match the outlined action
@@ -42,35 +42,12 @@ fun GitHubButton(
         isLoading = isLoading,
         onClick = onClick,
         modifier = modifier,
-        icon = { GitHubGlyph() },
+        icon = {
+            Image(
+                painter = painterResource(id = R.drawable.ic_provider_github),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+        },
     )
-}
-
-/**
- * Simplified GitHub "octocat" silhouette, drawn with plain [Canvas] circles rather than ported
- * SVG path data — a rounded head with two ears, visually recognizable without pixel-perfect
- * brand fidelity.
- */
-@Composable
-private fun GitHubGlyph() {
-    val glyphColor = LocalContentColor.current
-    Canvas(modifier = Modifier.size(18.dp)) {
-        val headRadius = size.minDimension * 0.42f
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val earRadius = size.minDimension * 0.14f
-
-        // Ears.
-        drawCircle(
-            color = glyphColor,
-            radius = earRadius,
-            center = Offset(center.x - headRadius * 0.62f, center.y - headRadius * 0.62f),
-        )
-        drawCircle(
-            color = glyphColor,
-            radius = earRadius,
-            center = Offset(center.x + headRadius * 0.62f, center.y - headRadius * 0.62f),
-        )
-        // Head/body.
-        drawCircle(color = glyphColor, radius = headRadius, center = center)
-    }
 }

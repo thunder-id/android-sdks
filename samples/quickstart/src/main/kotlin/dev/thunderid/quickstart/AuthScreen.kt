@@ -43,7 +43,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -193,15 +192,8 @@ fun AuthScreen(applicationId: String) {
             sheetState = sheetState,
         ) {
             when (showSheet) {
-                "login" -> LoginSheetContent(
-                    applicationId = applicationId,
-                    onForgotPassword = { showSheet = "recover" },
-                    onSignUp = { showSheet = "signup" },
-                )
+                "login" -> LoginSheetContent(applicationId = applicationId)
                 "signup" -> SignUpSheetContent()
-                "recover" -> RecoverSheetContent(
-                    onBackToSignIn = { showSheet = "login" },
-                )
             }
         }
     }
@@ -219,11 +211,7 @@ private fun SheetTitle(text: String) {
 }
 
 @Composable
-private fun LoginSheetContent(
-    applicationId: String,
-    onForgotPassword: () -> Unit,
-    onSignUp: () -> Unit,
-) {
+private fun LoginSheetContent(applicationId: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -234,17 +222,6 @@ private fun LoginSheetContent(
         SheetTitle("Sign in")
         Spacer(Modifier.height(8.dp))
         SignIn(applicationId = applicationId, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onForgotPassword) {
-            Text("Forgot password?", color = PrimaryBlue, fontSize = 14.sp)
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Don't have an account?", fontSize = 14.sp, color = TextMuted)
-            TextButton(onClick = onSignUp) {
-                Text("Create one", color = PrimaryBlue, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
     }
 }
 
@@ -260,37 +237,6 @@ private fun SignUpSheetContent() {
         SheetTitle("Create account")
         Spacer(Modifier.height(8.dp))
         SignUp(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
-    }
-}
-
-@Composable
-private fun RecoverSheetContent(onBackToSignIn: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        SheetTitle("Reset password")
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Enter your email below",
-            fontSize = 14.sp,
-            color = TextMuted,
-            modifier = Modifier.padding(start = 0.dp),
-            textAlign = TextAlign.Start,
-        )
-        Spacer(Modifier.height(32.dp))
-        OutlinedButton(
-            onClick = onBackToSignIn,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(10.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue),
-        ) {
-            Text("Back to sign in", fontWeight = FontWeight.Medium)
-        }
     }
 }
 

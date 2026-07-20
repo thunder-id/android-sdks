@@ -92,6 +92,25 @@ class ThunderIDClientTest {
             assertEquals(listOf("openid", "profile"), retrieved.scopes)
         }
 
+    @Test(expected = IAMException::class)
+    fun `initialize rejects attestationEnabled without a token provider`() =
+        runTest {
+            val config = ThunderIDConfig(baseUrl = "https://localhost:8090", attestationEnabled = true)
+            client.initialize(config, storage)
+        }
+
+    @Test
+    fun `initialize accepts attestationEnabled with a token provider`() =
+        runTest {
+            val config =
+                ThunderIDConfig(
+                    baseUrl = "https://localhost:8090",
+                    attestationEnabled = true,
+                    attestationTokenProvider = { "test-token" },
+                )
+            assertTrue(client.initialize(config, storage))
+        }
+
     // PKCE
 
     @Test

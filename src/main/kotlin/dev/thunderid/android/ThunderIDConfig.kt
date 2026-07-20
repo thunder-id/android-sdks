@@ -39,6 +39,11 @@ data class ThunderIDConfig(
     // Application Identity
     val applicationId: String? = null,
     val organizationHandle: String? = null,
+    // Platform Attestation — when enabled, a token from [attestationTokenProvider] is sent with every
+    // native flow-initiate request (e.g. Google Play Integrity on Android). The provider is invoked by
+    // the SDK; the app supplies it since obtaining a platform attestation token is app/platform-specific.
+    val attestationEnabled: Boolean = false,
+    val attestationTokenProvider: (suspend () -> String)? = null,
     // Token Validation
     val tokenValidation: TokenValidationConfig = TokenValidationConfig(),
     // Storage & Platform

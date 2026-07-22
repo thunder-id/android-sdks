@@ -37,7 +37,7 @@ internal object AvatarContentDeriver {
     private val ANONYMOUS_ANIMAL_NAMES: List<String> = LogoIconRegistry.ANONYMOUS_ANIMAL_ICONS.keys.sorted()
 
     /**
-     * The 33 curated `anonymous_entity` keys, sorted, so a given seed always hashes to the same
+     * The 36 curated `anonymous_entity` keys, sorted, so a given seed always hashes to the same
      * index regardless of map iteration order.
      */
     private val ANONYMOUS_ENTITY_NAMES: List<String> = LogoIconRegistry.ANONYMOUS_ENTITY_ICONS.keys.sorted()

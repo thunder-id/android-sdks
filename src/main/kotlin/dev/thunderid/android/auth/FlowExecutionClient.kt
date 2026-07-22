@@ -31,6 +31,7 @@ internal class FlowExecutionClient(
     suspend fun initiate(
         applicationId: String,
         flowType: FlowType,
+        attestationToken: String? = null,
     ): EmbeddedFlowResponse {
         val body =
             mapOf(
@@ -38,7 +39,7 @@ internal class FlowExecutionClient(
                 "flowType" to flowType.value,
                 "verbose" to true,
             )
-        return httpClient.post("/flow/execute", body, requiresAuth = false)
+        return httpClient.post("/flow/execute", body, requiresAuth = false, headers = attestationTokenHeaders(attestationToken))
     }
 
     suspend fun submit(
@@ -52,6 +53,8 @@ internal class FlowExecutionClient(
         if (inputs.isNotEmpty()) body["inputs"] = inputs
         return httpClient.post("/flow/execute", body, requiresAuth = false)
     }
+
+    private fun attestationTokenHeaders(token: String?): Map<String, String> = token?.let { mapOf("Attestation-Token" to it) } ?: emptyMap()
 
     internal fun submitBody(
         flowId: String,

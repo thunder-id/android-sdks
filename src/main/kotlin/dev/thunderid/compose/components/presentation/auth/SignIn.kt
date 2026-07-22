@@ -141,7 +141,7 @@ private fun FlowComponent.identifierKey(): String? = ref ?: id
  * variant, icon) from the matching `ACTION`-typed node in the component tree, matched by
  * whichever of `ref`/`id` each side populated. Explicit flat values always win.
  */
-private fun enrichActions(
+internal fun enrichActions(
     actions: List<FlowAction>,
     components: List<FlowComponent>,
 ): List<FlowAction> {

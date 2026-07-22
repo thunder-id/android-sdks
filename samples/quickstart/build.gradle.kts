@@ -27,11 +27,15 @@ android {
         val appId = config("THUNDERID_APPLICATION_ID")
         val afterSignInUrl = config("THUNDERID_AFTER_SIGN_IN_URL")
         val afterSignOutUrl = config("THUNDERID_AFTER_SIGN_OUT_URL")
+        val attestationEnabled = config("THUNDERID_ATTESTATION_ENABLED")
+        val cloudProjectNumber = config("THUNDERID_CLOUD_PROJECT_NUMBER")
         buildConfigField("String", "THUNDERID_BASE_URL", "\"$baseUrl\"")
         buildConfigField("String", "THUNDERID_CLIENT_ID", "\"$clientId\"")
         buildConfigField("String", "THUNDERID_APPLICATION_ID", "\"$appId\"")
         buildConfigField("String", "THUNDERID_AFTER_SIGN_IN_URL", "\"$afterSignInUrl\"")
         buildConfigField("String", "THUNDERID_AFTER_SIGN_OUT_URL", "\"$afterSignOutUrl\"")
+        buildConfigField("boolean", "THUNDERID_ATTESTATION_ENABLED", attestationEnabled.toBoolean().toString())
+        buildConfigField("long", "THUNDERID_CLOUD_PROJECT_NUMBER", "${cloudProjectNumber.toLongOrNull() ?: 0L}L")
     }
 
     buildFeatures {
@@ -55,6 +59,7 @@ android {
 
 dependencies {
     implementation("dev.thunderid:android")
+    implementation("com.google.android.play:integrity:1.6.0")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
     implementation(composeBom)

@@ -54,13 +54,15 @@ internal class HttpClient(
         path: String,
         body: Map<String, Any>,
         requiresAuth: Boolean = true,
-    ): T = request("POST", path, body, requiresAuth)
+        headers: Map<String, String> = emptyMap(),
+    ): T = request("POST", path, body, requiresAuth, headers)
 
     suspend inline fun <reified T : Any> request(
         method: String,
         path: String,
         body: Map<String, Any>?,
         requiresAuth: Boolean,
+        headers: Map<String, String> = emptyMap(),
     ): T =
         withContext(Dispatchers.IO) {
             val urlString = baseUrl + path
@@ -76,6 +78,7 @@ internal class HttpClient(
                     requestMethod = method
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Accept", "application/json")
+                    headers.forEach { (name, value) -> setRequestProperty(name, value) }
                     if (requiresAuth) {
                         val token =
                             accessTokenProvider?.invoke()

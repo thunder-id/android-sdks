@@ -101,7 +101,7 @@ class ThunderIDClient {
                 if (payload.flowId != null) {
                     flowClient!!.submit(payload.flowId, payload.actionId, payload.inputs, payload.challengeToken)
                 } else {
-                    flowClient!!.initiate(request.applicationId, request.flowType)
+                    flowClient!!.initiate(request.applicationId, request.flowType, attestationToken())
                 }
             establishSessionIfNeeded(response)
             response
@@ -193,7 +193,7 @@ class ThunderIDClient {
             if (payload?.flowId != null) {
                 flowClient!!.submit(payload.flowId, payload.actionId, payload.inputs, payload.challengeToken)
             } else {
-                flowClient!!.initiate(appId, request?.flowType ?: FlowType.REGISTRATION)
+                flowClient!!.initiate(appId, request?.flowType ?: FlowType.REGISTRATION, attestationToken())
             }
         establishSessionIfNeeded(response)
         return response
@@ -294,6 +294,18 @@ class ThunderIDClient {
     private fun validateConfig(config: ThunderIDConfig) {
         if (config.baseUrl.isEmpty()) throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl is required")
         if (!config.baseUrl.startsWith("https://")) throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl must use HTTPS")
+        if (config.attestationEnabled && config.attestationTokenProvider == null) {
+            throw IAMException(
+                ThunderIDErrorCode.INVALID_CONFIGURATION,
+                "attestationTokenProvider is required when attestationEnabled is true",
+            )
+        }
+    }
+
+    private suspend fun attestationToken(): String? {
+        val cfg = config ?: return null
+        if (!cfg.attestationEnabled) return null
+        return cfg.attestationTokenProvider?.invoke()
     }
 
     private fun establishSessionIfNeeded(response: EmbeddedFlowResponse) {

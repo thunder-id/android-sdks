@@ -86,6 +86,9 @@ internal object LogoIconRegistry {
             "circuit_node" to R.drawable.logo_icon_entity_circuit_node,
             "antenna" to R.drawable.logo_icon_entity_antenna,
             "valve" to R.drawable.logo_icon_entity_valve,
+            "bot_head" to R.drawable.logo_icon_entity_bot_head,
+            "brain" to R.drawable.logo_icon_entity_brain,
+            "neural_net" to R.drawable.logo_icon_entity_neural_net,
         )
 
     @DrawableRes

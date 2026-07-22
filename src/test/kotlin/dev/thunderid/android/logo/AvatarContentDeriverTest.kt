@@ -56,9 +56,9 @@ class AvatarContentDeriverTest {
 
     @Test
     fun `derives a deterministic anonymous_entity key from the seed`() {
-        // hashStr("Fox") == 70831 (see AvatarMathTest); 70831 mod 33 == 13, "key" in the sorted
-        // 33-name list.
-        assertEquals("key", AvatarContentDeriver.derive("Fox", AvatarVariant.ANONYMOUS_ENTITY))
+        // hashStr("Fox") == 70831 (see AvatarMathTest); 70831 mod 36 == 19, "obelisk" in the sorted
+        // 36-name list.
+        assertEquals("obelisk", AvatarContentDeriver.derive("Fox", AvatarVariant.ANONYMOUS_ENTITY))
         assertEquals(
             AvatarContentDeriver.derive("Fox", AvatarVariant.ANONYMOUS_ENTITY),
             AvatarContentDeriver.derive("Fox", AvatarVariant.ANONYMOUS_ENTITY),

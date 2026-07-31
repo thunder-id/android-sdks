@@ -46,11 +46,14 @@ fun TriggerButtonStyle(
     isLoading: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    // Disables the button without showing a spinner, e.g. while a sibling button's
+    // submission is in flight.
+    disabled: Boolean = false,
     icon: (@Composable () -> Unit)? = null,
 ) {
     OutlinedButton(
         onClick = onClick,
-        enabled = !isLoading,
+        enabled = !isLoading && !disabled,
         modifier = modifier.fillMaxWidth().height(48.dp),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, LocalContentColor.current.copy(alpha = 0.4f)),

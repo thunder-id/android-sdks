@@ -23,17 +23,11 @@ android {
         if (configFile.exists()) configFile.inputStream().use { configProps.load(it) }
         fun config(key: String) = configProps.getProperty(key) ?: System.getenv(key) ?: ""
         val baseUrl = config("THUNDERID_BASE_URL")
-        val clientId = config("THUNDERID_CLIENT_ID")
         val appId = config("THUNDERID_APPLICATION_ID")
-        val afterSignInUrl = config("THUNDERID_AFTER_SIGN_IN_URL")
-        val afterSignOutUrl = config("THUNDERID_AFTER_SIGN_OUT_URL")
         val attestationEnabled = config("THUNDERID_ATTESTATION_ENABLED")
         val cloudProjectNumber = config("THUNDERID_CLOUD_PROJECT_NUMBER")
         buildConfigField("String", "THUNDERID_BASE_URL", "\"$baseUrl\"")
-        buildConfigField("String", "THUNDERID_CLIENT_ID", "\"$clientId\"")
         buildConfigField("String", "THUNDERID_APPLICATION_ID", "\"$appId\"")
-        buildConfigField("String", "THUNDERID_AFTER_SIGN_IN_URL", "\"$afterSignInUrl\"")
-        buildConfigField("String", "THUNDERID_AFTER_SIGN_OUT_URL", "\"$afterSignOutUrl\"")
         buildConfigField("boolean", "THUNDERID_ATTESTATION_ENABLED", attestationEnabled.toBoolean().toString())
         buildConfigField("long", "THUNDERID_CLOUD_PROJECT_NUMBER", "${cloudProjectNumber.toLongOrNull() ?: 0L}L")
     }

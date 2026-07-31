@@ -36,12 +36,14 @@ fun GitHubButton(
     isLoading: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    disabled: Boolean = false,
 ) {
     TriggerButtonStyle(
         label = label,
         isLoading = isLoading,
         onClick = onClick,
         modifier = modifier,
+        disabled = disabled,
         icon = {
             Image(
                 painter = painterResource(id = R.drawable.ic_provider_github),

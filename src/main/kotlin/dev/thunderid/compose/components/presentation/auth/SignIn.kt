@@ -18,6 +18,7 @@
 
 package dev.thunderid.compose.components.presentation.auth
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -68,6 +70,7 @@ import dev.thunderid.android.FlowInput
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowType
 import dev.thunderid.android.IAMException
+import dev.thunderid.android.auth.PasskeyClient
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.components.actions.adapters.GitHubButton
@@ -76,6 +79,7 @@ import dev.thunderid.compose.components.actions.adapters.OutlinedTriggerButton
 import dev.thunderid.compose.components.actions.adapters.PasskeyButton
 import dev.thunderid.compose.i18n.FlowTemplateResolver
 import dev.thunderid.compose.i18n.ThunderIDI18n
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** State passed to the [BaseSignIn] builder slot. */
@@ -544,8 +548,10 @@ fun BaseSignIn(
     content: @Composable (SignInState) -> Unit,
 ) {
     val thunderState = LocalThunderID.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val signInState = remember { SignInState() }
+    val passkeyClient = remember { PasskeyClient() }
 
     signInState.onSubmit = { actionId ->
         scope.launch {
@@ -562,7 +568,9 @@ fun BaseSignIn(
                     )
                 val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
                 val response = thunderState.client.signIn(payload = payload, request = request)
-                handleSignInResponse(response, signInState, thunderState, onComplete, onError)
+                handleSignInResponse(response, signInState, thunderState, request, context, passkeyClient, onComplete, onError)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("SignInFlow", "Sign-in submit failed (${diagnosticLabel(e)})")
                 signInState.error = e.message
@@ -585,7 +593,7 @@ fun BaseSignIn(
                 "Flow initiated: status=${response.flowStatus} " +
                     "inputs=${response.data?.inputs?.size ?: 0} actions=${response.data?.actions?.size ?: 0}",
             )
-            handleSignInResponse(response, signInState, thunderState, onComplete, onError)
+            handleSignInResponse(response, signInState, thunderState, request, context, passkeyClient, onComplete, onError)
             try {
                 val metaMap = thunderState.client.getFlowMeta(applicationId)
                 signInState.templateResolver = FlowTemplateResolver(metaMap)
@@ -612,6 +620,9 @@ private suspend fun handleSignInResponse(
     response: EmbeddedFlowResponse,
     signInState: SignInState,
     thunderState: ThunderIDState,
+    request: EmbeddedFlowRequestConfig,
+    context: Context,
+    passkeyClient: PasskeyClient,
     onComplete: (() -> Unit)?,
     onError: ((String) -> Unit)?,
 ) {
@@ -623,6 +634,29 @@ private suspend fun handleSignInResponse(
         }
 
         FlowStatus.PROMPT_ONLY, FlowStatus.INCOMPLETE -> {
+            val flowId = response.flowId ?: signInState.flowId
+            val additionalData = response.data?.additionalData
+            val passkeyChallenge = additionalData?.get("passkeyChallenge") as? String
+            val passkeyCreationOptions = additionalData?.get("passkeyCreationOptions") as? String
+
+            if (flowId != null && (passkeyChallenge != null || passkeyCreationOptions != null)) {
+                signInState.update(response)
+                performPasskeyCeremony(
+                    flowId = flowId,
+                    challengeToken = response.challengeToken,
+                    passkeyChallenge = passkeyChallenge,
+                    passkeyCreationOptions = passkeyCreationOptions,
+                    signInState = signInState,
+                    thunderState = thunderState,
+                    request = request,
+                    context = context,
+                    passkeyClient = passkeyClient,
+                    onComplete = onComplete,
+                    onError = onError,
+                )
+                return
+            }
+
             signInState.update(response)
         }
 
@@ -631,6 +665,46 @@ private suspend fun handleSignInResponse(
             signInState.error = msg
             onError?.invoke(msg)
         }
+    }
+}
+
+/**
+ * Runs the native WebAuthn ceremony ([PasskeyClient.authenticate] for a `passkeyChallenge`,
+ * [PasskeyClient.register] for `passkeyCreationOptions`) and resubmits the flow with the
+ * resulting flat inputs, without requiring another user tap. On ceremony failure (user
+ * cancellation, no credential, etc.) the error is surfaced and the flow is left as-is so the
+ * user can retry.
+ */
+private suspend fun performPasskeyCeremony(
+    flowId: String,
+    challengeToken: String?,
+    passkeyChallenge: String?,
+    passkeyCreationOptions: String?,
+    signInState: SignInState,
+    thunderState: ThunderIDState,
+    request: EmbeddedFlowRequestConfig,
+    context: Context,
+    passkeyClient: PasskeyClient,
+    onComplete: (() -> Unit)?,
+    onError: ((String) -> Unit)?,
+) {
+    try {
+        val inputs =
+            if (passkeyChallenge != null) {
+                passkeyClient.authenticate(context, passkeyChallenge)
+            } else {
+                passkeyClient.register(context, passkeyCreationOptions!!)
+            }
+        val nextPayload = EmbeddedSignInPayload(flowId = flowId, inputs = inputs, challengeToken = challengeToken)
+        val nextResponse = thunderState.client.signIn(payload = nextPayload, request = request)
+        handleSignInResponse(nextResponse, signInState, thunderState, request, context, passkeyClient, onComplete, onError)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.e("SignInFlow", "Passkey ceremony failed (${diagnosticLabel(e)})")
+        val msg = e.message ?: "Passkey authentication failed"
+        signInState.error = msg
+        onError?.invoke(msg)
     }
 }
 

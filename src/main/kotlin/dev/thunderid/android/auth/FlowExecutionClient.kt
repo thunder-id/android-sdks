@@ -44,7 +44,7 @@ internal class FlowExecutionClient(
 
     suspend fun submit(
         flowId: String,
-        actionId: String,
+        actionId: String?,
         inputs: Map<String, String>,
         challengeToken: String?,
     ): EmbeddedFlowResponse {
@@ -58,10 +58,11 @@ internal class FlowExecutionClient(
 
     internal fun submitBody(
         flowId: String,
-        actionId: String,
+        actionId: String?,
         challengeToken: String?,
     ): Map<String, Any> {
-        val body = mutableMapOf<String, Any>("executionId" to flowId, "action" to actionId)
+        val body = mutableMapOf<String, Any>("executionId" to flowId)
+        if (actionId != null) body["action"] = actionId
         if (challengeToken != null) body["challengeToken"] = challengeToken
         return body
     }

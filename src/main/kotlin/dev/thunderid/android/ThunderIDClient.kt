@@ -63,10 +63,10 @@ class ThunderIDClient {
         tokenRefresher = TokenRefresher(http, store)
         flowClient = FlowExecutionClient(http)
         http.setAccessTokenProvider {
-            val clientId =
-                this.config?.clientId
-                    ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required")
-            tokenRefresher!!.getAccessToken(clientId)
+            val cfg =
+                this.config
+                    ?: throw IAMException(ThunderIDErrorCode.SDK_NOT_INITIALIZED, "Not initialized")
+            tokenRefresher!!.getAccessToken(cfg.clientId)
         }
         httpClient = http
         return true
@@ -203,8 +203,7 @@ class ThunderIDClient {
 
     suspend fun getAccessToken(): String {
         requireInitialized()
-        val clientId = config?.clientId ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required")
-        return tokenRefresher!!.getAccessToken(clientId)
+        return tokenRefresher!!.getAccessToken(config?.clientId)
     }
 
     fun decodeJwtToken(token: String): Map<String, Any?> {

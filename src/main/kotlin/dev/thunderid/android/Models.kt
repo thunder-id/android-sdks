@@ -70,7 +70,7 @@ data class TokenExchangeRequestConfig(
 
 data class EmbeddedSignInPayload(
     val flowId: String? = null,
-    val actionId: String,
+    val actionId: String? = null,
     val inputs: Map<String, String> = emptyMap(),
     val challengeToken: String? = null,
 )
@@ -106,6 +106,7 @@ data class FlowStepData(
     val actions: List<FlowAction>? = null,
     val inputs: List<FlowInput>? = null,
     val meta: FlowMeta? = null,
+    val additionalData: Map<String, Any>? = null,
 )
 
 data class FlowAction(

@@ -34,7 +34,7 @@ internal class TokenRefresher(
 ) {
     private val mutex = Mutex()
 
-    suspend fun getAccessToken(clientId: String): String {
+    suspend fun getAccessToken(clientId: String?): String {
         val token = tokenStore.accessToken()
         if (token != null) {
             if (!tokenStore.isNearExpiry()) return token
@@ -42,7 +42,10 @@ internal class TokenRefresher(
             // If no refresh token exists, use the current token instead of failing.
             if (tokenStore.refreshToken() == null) return token
         }
-        return refresh(clientId).accessToken
+        val id =
+            clientId
+                ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required to refresh access token")
+        return refresh(id).accessToken
     }
 
     suspend fun refresh(clientId: String): TokenResponse =

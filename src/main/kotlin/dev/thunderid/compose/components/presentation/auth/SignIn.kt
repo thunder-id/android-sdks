@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -71,6 +73,7 @@ import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.components.actions.adapters.GitHubButton
 import dev.thunderid.compose.components.actions.adapters.GoogleButton
 import dev.thunderid.compose.components.actions.adapters.OutlinedTriggerButton
+import dev.thunderid.compose.components.actions.adapters.PasskeyButton
 import dev.thunderid.compose.i18n.FlowTemplateResolver
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import kotlinx.coroutines.launch
@@ -87,6 +90,14 @@ class SignInState {
     var templateResolver by mutableStateOf<FlowTemplateResolver?>(null)
         internal set
     var isLoading by mutableStateOf(false)
+        internal set
+
+    /**
+     * The actionId currently being submitted, if known. When set, only the button matching
+     * this id shows a spinner while [isLoading] is true — the rest are disabled but keep
+     * their label instead of every button spinning together.
+     */
+    var loadingActionId by mutableStateOf<String?>(null)
         internal set
     var error by mutableStateOf<String?>(null)
         internal set
@@ -181,8 +192,14 @@ fun SignIn(
     val i18n = thunderState.i18n
     BaseSignIn(applicationId = applicationId, modifier = modifier, onComplete = onComplete, onError = onError) { signInState ->
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            signInState.error?.let { Text(it) }
-            if (signInState.components.isNotEmpty()) {
+            val error = signInState.error
+            if (error != null) {
+                // An error response carries no UI of its own — the previous step's
+                // inputs/actions are stale once the server has rejected the last submission,
+                // so show only the error instead of a form the user can no longer
+                // meaningfully interact with.
+                FlowErrorBanner(message = error)
+            } else if (signInState.components.isNotEmpty()) {
                 signInState.components.forEach { component ->
                     FlowComponentView(
                         component = component,
@@ -245,7 +262,15 @@ fun FlowComponentView(
         component.type == "RICH_TEXT" -> {
             val html = resolver?.resolve(component.label) ?: component.label ?: ""
             if (html.isNotBlank()) {
-                RichTextView(html = html, modifier = modifier)
+                RichTextView(
+                    html = html,
+                    modifier = modifier,
+                    onActionRef = { actionRef ->
+                        val action =
+                            signInState.actions.firstOrNull { it.identifierKey() == actionRef } ?: return@RichTextView
+                        signInState.submit(action.id ?: action.ref ?: return@RichTextView)
+                    },
+                )
             }
         }
 
@@ -342,32 +367,52 @@ private fun ActionComponentView(
     val identity = ((action.icon ?: "") + (action.ref ?: "") + (action.label ?: "")).lowercase()
     val taggedModifier = modifier.testTag("thunderid-action-$actionId")
 
+    // Only the button matching the in-flight submission shows a spinner; the rest stay
+    // disabled (to prevent overlapping submits) but keep their label instead of every
+    // button spinning together.
+    val isActiveAction = signInState.loadingActionId == null || signInState.loadingActionId == actionId
+    val isSpinning = signInState.isLoading && isActiveAction
+    val isBlocked = signInState.isLoading && !isActiveAction
+
     if (isTrigger) {
         when {
             identity.contains("google") -> {
                 GoogleButton(
                     label = label,
-                    isLoading = signInState.isLoading,
+                    isLoading = isSpinning,
                     onClick = { signInState.submit(actionId) },
                     modifier = taggedModifier,
+                    disabled = isBlocked,
                 )
             }
 
             identity.contains("github") -> {
                 GitHubButton(
                     label = label,
-                    isLoading = signInState.isLoading,
+                    isLoading = isSpinning,
                     onClick = { signInState.submit(actionId) },
                     modifier = taggedModifier,
+                    disabled = isBlocked,
+                )
+            }
+
+            identity.contains("passkey") -> {
+                PasskeyButton(
+                    label = label,
+                    isLoading = isSpinning,
+                    onClick = { signInState.submit(actionId) },
+                    modifier = taggedModifier,
+                    disabled = isBlocked,
                 )
             }
 
             else -> {
                 OutlinedTriggerButton(
                     label = label,
-                    isLoading = signInState.isLoading,
+                    isLoading = isSpinning,
                     onClick = { signInState.submit(actionId) },
                     modifier = taggedModifier,
+                    disabled = isBlocked,
                 )
             }
         }
@@ -377,7 +422,15 @@ private fun ActionComponentView(
             enabled = !signInState.isLoading,
             modifier = taggedModifier.fillMaxWidth(),
         ) {
-            Text(label)
+            if (isSpinning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            } else {
+                Text(label)
+            }
         }
     }
 }
@@ -403,21 +456,35 @@ private fun DividerRow(
     }
 }
 
-private val RICH_TEXT_LINK_REGEX = Regex("<a\\s+[^>]*href=\"([^\"]*)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+// Anchors carry either an `href` (an external URL to open) or a `data-action-ref` (a sentinel
+// identifying a flow action to submit in-app, matching the web SDK's sentinel-anchor
+// contract). There's no DOM/browser navigation on mobile, so `data-action-ref` always wins.
+private val RICH_TEXT_LINK_REGEX = Regex("<a\\s+([^>]*)>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+private val RICH_TEXT_ATTR_REGEX = Regex("([\\w-]+)\\s*=\\s*\"([^\"]*)\"")
 private val RICH_TEXT_TAG_REGEX = Regex("<[^>]+>")
+
+private const val ACTION_REF_TAG = "actionRef"
+private const val URL_TAG = "URL"
 
 private fun stripHtmlTags(text: String): String = text.replace(RICH_TEXT_TAG_REGEX, "")
 
+private fun parseAttributes(raw: String): Map<String, String> =
+    RICH_TEXT_ATTR_REGEX
+        .findAll(raw)
+        .associate { it.groupValues[1].lowercase() to it.groupValues[2] }
+
 /**
- * Renders a constrained HTML subset (`<p>`, `<span>`, `<a href="URL">…</a>`) returned by the
- * server for `RICH_TEXT` components — e.g. "forgot password" / "sign up" links. All other tags
- * are stripped; `<a>` segments become clickable, colored, underlined spans that open the href
- * via [LocalUriHandler].
+ * Renders a constrained HTML subset (`<p>`, `<span>`, `<a>…</a>`) returned by the server for
+ * `RICH_TEXT` components — e.g. "forgot password" / "sign up" links. All other tags are
+ * stripped; `<a>` segments become clickable, colored, underlined spans that either open the
+ * href via [LocalUriHandler] or, when the anchor carries `data-action-ref`, invoke
+ * [onActionRef] with that value.
  */
 @Composable
 private fun RichTextView(
     html: String,
     modifier: Modifier = Modifier,
+    onActionRef: ((String) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
     val linkColor = MaterialTheme.colorScheme.primary
@@ -430,9 +497,15 @@ private fun RichTextView(
                     if (range.first > lastIndex) {
                         append(stripHtmlTags(html.substring(lastIndex, range.first)))
                     }
-                    val href = match.groupValues[1]
+                    val attrs = parseAttributes(match.groupValues[1])
                     val linkText = stripHtmlTags(match.groupValues[2])
-                    pushStringAnnotation(tag = "URL", annotation = href)
+                    val actionRef = attrs["data-action-ref"]?.takeIf { it.isNotEmpty() }
+                    val href = attrs["href"] ?: ""
+                    if (actionRef != null) {
+                        pushStringAnnotation(tag = ACTION_REF_TAG, annotation = actionRef)
+                    } else {
+                        pushStringAnnotation(tag = URL_TAG, annotation = href)
+                    }
                     withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                         append(linkText)
                     }
@@ -450,9 +523,13 @@ private fun RichTextView(
         style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
         onClick = { offset ->
             annotatedString
-                .getStringAnnotations(tag = "URL", start = offset, end = offset)
+                .getStringAnnotations(tag = ACTION_REF_TAG, start = offset, end = offset)
                 .firstOrNull()
-                ?.let { uriHandler.openUri(it.item) }
+                ?.let { onActionRef?.invoke(it.item) }
+                ?: annotatedString
+                    .getStringAnnotations(tag = URL_TAG, start = offset, end = offset)
+                    .firstOrNull()
+                    ?.let { uriHandler.openUri(it.item) }
         },
     )
 }
@@ -473,6 +550,7 @@ fun BaseSignIn(
     signInState.onSubmit = { actionId ->
         scope.launch {
             signInState.isLoading = true
+            signInState.loadingActionId = actionId
             signInState.error = null
             try {
                 val payload =
@@ -491,6 +569,7 @@ fun BaseSignIn(
                 onError?.invoke(e.message ?: "Sign-in failed")
             } finally {
                 signInState.isLoading = false
+                signInState.loadingActionId = null
             }
         }
     }

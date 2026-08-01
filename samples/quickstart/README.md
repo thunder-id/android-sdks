@@ -1,36 +1,46 @@
 # ThunderID Android Quickstart
 
-Demonstrates a native Android flow using the ThunderID Compose SDK:
+ThunderID Android Quickstart demonstrates the full authentication lifecycle using the `dev.thunderid:android` SDK on iOS and Android.
 
-- Unauthenticated → embedded sign-in form (Flow Execution API)
-- Authenticated → user avatar, editable profile sheet
-- Sign-out → returns to sign-in screen
+**Flow demonstrated:**
+1. App opens → unauthenticated state (sign-in screen)
+2. User initiates sign-in / sign-up → SDK starts app-native Flow Execution
+3. User completes the flow and logs in to ThunderID
+4. Successful → authenticated state with profile information, token debugging, and sign-out button.
+5. User taps Sign Out → session terminated, returns to sign-in screen
+
+## Prerequisites
+
+- Android Studio 2022.3+
+- A running ThunderID instance
 
 ## Setup
 
-Copy `config.properties.example` to `config.properties` (gitignored) and add your ThunderID credentials:
-
-```properties
-THUNDERID_BASE_URL=https://localhost:8090
-THUNDERID_CLIENT_ID=your-client-id
-THUNDERID_APPLICATION_ID=your-application-id
-THUNDERID_AFTER_SIGN_IN_URL=
-THUNDERID_AFTER_SIGN_OUT_URL=
-THUNDERID_ATTESTATION_ENABLED=false
-THUNDERID_CLOUD_PROJECT_NUMBER=
+```bash
+cp config.properties.example config.properties
 ```
 
-- `THUNDERID_APPLICATION_ID` comes from your application's page in the ThunderID console
-  (**Applications → your app → General**).
-- `THUNDERID_CLIENT_ID` is only needed if you switch this sample to the redirect-based OAuth flow; the
-  embedded Flow Execution API used here (sign-in and sign-up) doesn't require it.
 
-To let users self-register, enable self-registration in **both** places in the console — it's disabled by
-default in either and the flow fails until both are turned on:
-1. The application's settings (registration flow enabled for this app).
-2. The user type assigned to the application (self-registration enabled for that user type).
+### Configuration
 
-### Google Play Integrity attestation (optional)
+> [!NOTE]
+> This sample uses app-native authentication (Flow Execution API), so only the base URL and application ID are required — no OAuth2 client ID or redirect URIs.
+
+
+| Variable | Description |
+|----------|-------------|
+| `THUNDERID_BASE_URL` | Base URL of your ThunderID server (HTTPS) |
+| `THUNDERID_APP_ID` | Application UUID from ThunderID console |
+
+💡 `config.properties` is gitignored. Never commit real credentials.
+
+> [!NOTE]
+> If your ThunderID server is running on `localhost`, don't use `localhost` in `THUNDERID_BASE_URL` directly:
+> - **Emulator**: use `https://10.0.2.2:8090` — the emulator's alias for your host machine's loopback.
+> - **Physical device**: run `adb reverse tcp:8090 tcp:8090` to forward the port over USB and keep using
+>   `https://localhost:8090`, or point the URL at your host machine's LAN IP.
+
+### Attestation via Google Play Integrity (optional)
 
 If the application enforces Google Play Integrity attestation, set `THUNDERID_ATTESTATION_ENABLED=true` and
 `THUNDERID_CLOUD_PROJECT_NUMBER` to the number (not the ID) of the Google Cloud project linked to your Play
@@ -47,7 +57,3 @@ Testing this end-to-end requires:
 ## Run
 
 Open in Android Studio, sync Gradle, and run on an API 24+ emulator or device.
-
-## SDK used
-
-`dev.thunderid:compose` — depends on the `dev.thunderid:android` Platform SDK.

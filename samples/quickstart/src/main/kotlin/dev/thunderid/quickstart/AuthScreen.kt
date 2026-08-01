@@ -121,7 +121,7 @@ fun AuthScreen(applicationId: String) {
 
                 // Subtext
                 Text(
-                    text = "OAuth 2.0, PKCE, MFA, and JWT —\nout of the box in minutes.",
+                    text = "OAuth 2.0, PKCE, MFA, and JWT -\nout of the box in minutes.",
                     fontSize = 15.sp,
                     color = TextMuted,
                     textAlign = TextAlign.Center,
@@ -219,8 +219,9 @@ private fun LoginSheetContent(applicationId: String) {
             .padding(bottom = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        SheetTitle("Sign in")
-        Spacer(Modifier.height(8.dp))
+        // The flow's own components (fetched by `SignIn`) already include a HEADING_1
+        // title — adding a sheet title here would duplicate it, unlike SignUp below
+        // which has no server-rendered heading of its own.
         SignIn(applicationId = applicationId, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
     }
 }

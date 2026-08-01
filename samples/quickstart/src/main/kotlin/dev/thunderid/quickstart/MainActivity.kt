@@ -28,7 +28,11 @@ import dev.thunderid.android.EncryptedStorageAdapter
 import dev.thunderid.android.ThunderIDConfig
 import dev.thunderid.compose.ThunderIDProvider
 
-private val AcmePrimary = Color(0xFFFF5A5F)
+// Matches the ThunderID blue used throughout AuthScreen/HomeScreen — the SDK's form
+// fields and bottom sheet read `MaterialTheme.colorScheme.primary`, so leaving this at
+// Material3's baseline (or an unrelated placeholder brand color) makes them look
+// mismatched/pink against the rest of the sample.
+private val ThunderIDPrimary = Color(0xFF3688FF)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,10 +44,7 @@ class MainActivity : ComponentActivity() {
 
         val config = ThunderIDConfig(
             baseUrl = BuildConfig.THUNDERID_BASE_URL,
-            clientId = BuildConfig.THUNDERID_CLIENT_ID.takeIf { it.isNotBlank() },
             scopes = listOf("openid", "profile", "email"),
-            afterSignInUrl = BuildConfig.THUNDERID_AFTER_SIGN_IN_URL.takeIf { it.isNotBlank() },
-            afterSignOutUrl = BuildConfig.THUNDERID_AFTER_SIGN_OUT_URL.takeIf { it.isNotBlank() },
             applicationId = BuildConfig.THUNDERID_APPLICATION_ID.takeIf { it.isNotBlank() },
             attestationEnabled = attestationEnabled,
             attestationTokenProvider = if (attestationEnabled) integrityTokenProvider::requestToken else null,
@@ -51,7 +52,7 @@ class MainActivity : ComponentActivity() {
             allowInsecureConnections = BuildConfig.DEBUG,
         )
 
-        val colorScheme = lightColorScheme(primary = AcmePrimary)
+        val colorScheme = lightColorScheme(primary = ThunderIDPrimary)
 
         setContent {
             MaterialTheme(colorScheme = colorScheme) {

@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import dev.thunderid.android.User
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.actions.SignOutButton
+import dev.thunderid.compose.components.presentation.user.UserAvatar
 import dev.thunderid.compose.components.presentation.user.UserProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -80,7 +82,6 @@ import java.util.Locale
 
 private val PrimaryBlue = Color(0xFF3688FF)
 private val SuccessGreen = Color(0xFF2FBD6B)
-private val ErrorRed = Color(0xFFD95757)
 private val DarkBg = Color(0xFF080F1C)
 private val LightBg = Color(0xFFF7F9FC)
 private val BorderLight = Color(0xFFDDE3EC)
@@ -118,20 +119,23 @@ fun HomeScreen() {
 private fun HomeTab(onNavigate: (String) -> Unit) {
     val thunder = LocalThunderID.current
 
-    val displayName = remember(thunder.user) { userDisplayName(thunder.user) }
-    val initials = remember(displayName) { userInitials(displayName) }
-    val email = remember(thunder.user) { thunder.user?.email ?: "" }
-
     val dateLabel = remember {
         SimpleDateFormat("EEEE, MMMM d", Locale.ENGLISH).format(Date()).uppercase()
     }
-    val greeting = remember {
+    val greetingName = remember(thunder.user) {
+        val given = thunder.user?.claims?.get("given_name") as? String
+        given?.takeIf { it.isNotBlank() }
+            ?: thunder.user?.email?.substringBefore("@")?.takeIf { it.isNotBlank() }
+            ?: "there"
+    }
+    val greeting = remember(greetingName) {
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        when {
-            hour < 12 -> "Good morning."
-            hour < 17 -> "Good afternoon."
-            else -> "Good evening."
+        val timeOfDay = when {
+            hour < 12 -> "morning"
+            hour < 17 -> "afternoon"
+            else -> "evening"
         }
+        "Good $timeOfDay, $greetingName."
     }
 
     val claims = thunder.user?.claims
@@ -163,77 +167,50 @@ private fun HomeTab(onNavigate: (String) -> Unit) {
     ) {
         Spacer(Modifier.height(56.dp))
 
-        // User identity section
-        Column(
+        // Hero: avatar + (date/session row, greeting row)
+        Row(
             modifier = Modifier.padding(horizontal = 24.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Avatar
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(PrimaryBlue, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
+            UserAvatar(size = 52.dp)
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = initials,
-                        color = Color.White,
-                        fontSize = 18.sp,
+                        text = dateLabel,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text(
-                        text = displayName,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = email,
-                        fontSize = 13.sp,
                         color = TextMuted,
+                        letterSpacing = 1.sp,
                     )
-                    Spacer(Modifier.height(6.dp))
-                    // Session active badge
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(SuccessGreen, CircleShape),
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            text = "Session active",
-                            fontSize = 12.sp,
-                            color = SuccessGreen,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(3.dp)
+                            .background(BorderLight, CircleShape),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(SuccessGreen, CircleShape),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        text = "Session active",
+                        fontSize = 12.sp,
+                        color = SuccessGreen,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = greeting,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                )
             }
-        }
-
-        Spacer(Modifier.height(32.dp))
-
-        // Date + greeting
-        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-            Text(
-                text = dateLabel,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextMuted,
-                letterSpacing = 1.sp,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = greeting,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-            )
         }
 
         Spacer(Modifier.height(24.dp))
@@ -270,14 +247,34 @@ private fun HomeTab(onNavigate: (String) -> Unit) {
         Spacer(Modifier.height(8.dp))
 
         val steps = listOf(
-            Triple("01", "Secure your API", "Add token validation to your backend."),
-            Triple("02", "Add social login", "GitHub, Google, and OIDC providers."),
-            Triple("03", "Enable MFA", "TOTP and passkey support."),
-            Triple("04", "Explore the SDK", "API reference and guides."),
+            NextStep(
+                number = "01",
+                title = "Explore use cases",
+                subtitle = "See what you can build — auth flows for web, mobile, APIs, and agents.",
+                href = "https://thunderid.dev/docs/next/use-cases/overview/",
+            ),
+            NextStep(
+                number = "02",
+                title = "Learn about flows",
+                subtitle = "Understand how authorization code, PKCE, client credentials, and device flows work.",
+                href = "https://thunderid.dev/docs/next/guides/flows/what-are-flows/",
+            ),
+            NextStep(
+                number = "03",
+                title = "Style your experience",
+                subtitle = "Customize the login UI, branding, and email templates to match your product.",
+                href = "https://thunderid.dev/docs/next/guides/design/overview/",
+            ),
+            NextStep(
+                number = "04",
+                title = "Explore SDK APIs",
+                subtitle = "Full Android SDK reference — composables, state objects, and configuration options.",
+                href = "https://thunderid.dev/docs/next/sdks/android/overview/",
+            ),
         )
 
-        steps.forEach { (num, title, subtitle) ->
-            StepRow(number = num, title = title, subtitle = subtitle)
+        steps.forEach { step ->
+            StepRow(number = step.number, title = step.title, subtitle = step.subtitle, href = step.href)
         }
 
         Spacer(Modifier.height(20.dp))
@@ -285,7 +282,6 @@ private fun HomeTab(onNavigate: (String) -> Unit) {
         // Action rows
         ActionRow(label = "My profile", onClick = { onNavigate("profile") })
         ActionRow(label = "Token debug", onClick = { onNavigate("token") })
-        ActionRow(label = "Settings", onClick = {})
 
         // Sign out
         Box(
@@ -321,29 +317,37 @@ private fun StatColumn(value: String, label: String) {
     }
 }
 
+private data class NextStep(val number: String, val title: String, val subtitle: String, val href: String)
+
 @Composable
-private fun StepRow(number: String, title: String, subtitle: String) {
+private fun StepRow(number: String, title: String, subtitle: String, href: String) {
+    val uriHandler = LocalUriHandler.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .border(width = 0.dp, color = Color.Transparent)
+            .clickable(onClick = { uriHandler.openUri(href) })
             .padding(horizontal = 24.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = number,
-            fontSize = 9.sp,
-            fontFamily = FontFamily.Monospace,
-            color = PrimaryBlue,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-        Spacer(Modifier.width(14.dp))
-        Column {
-            Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(Modifier.height(2.dp))
-            Text(text = subtitle, fontSize = 13.sp, color = TextMuted)
+        Row(verticalAlignment = Alignment.Top) {
+            Text(
+                text = number,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                color = PrimaryBlue,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(Modifier.height(2.dp))
+                Text(text = subtitle, fontSize = 13.sp, color = TextMuted)
+            }
         }
+        Text(text = "›", fontSize = 18.sp, color = TextMuted, modifier = Modifier.padding(start = 8.dp))
     }
     Box(
         modifier = Modifier
@@ -387,7 +391,6 @@ private fun ActionRow(label: String, onClick: () -> Unit) {
 private fun ProfileScreen(onBack: () -> Unit) {
     val thunder = LocalThunderID.current
     val displayName = remember(thunder.user) { userDisplayName(thunder.user) }
-    val initials = remember(displayName) { userInitials(displayName) }
     val email = remember(thunder.user) { thunder.user?.email ?: "" }
     val userId = thunder.user?.sub ?: "—"
     val username = thunder.user?.username ?: "—"
@@ -419,34 +422,11 @@ private fun ProfileScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(PrimaryBlue, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = initials, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            }
+            UserAvatar(size = 56.dp)
             Spacer(Modifier.height(10.dp))
             Text(text = displayName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(Modifier.height(2.dp))
             Text(text = email, fontSize = 13.sp, color = TextMuted)
-            Spacer(Modifier.height(8.dp))
-            // Email verified badge
-            Row(
-                modifier = Modifier
-                    .background(SuccessGreen.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .background(SuccessGreen, CircleShape),
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(text = "Email verified", fontSize = 12.sp, color = SuccessGreen, fontWeight = FontWeight.Medium)
-            }
         }
 
         Spacer(Modifier.height(32.dp))
@@ -539,21 +519,6 @@ private fun TokenDebugScreen(onBack: () -> Unit) {
     val rawJson = decoded["raw"] as? String ?: ""
     val parts = (decoded["parts"] as? List<*>)?.map { it.toString() } ?: emptyList()
 
-    val expiryText = remember(rawJson) {
-        val expMatch = Regex("\"exp\"\\s*:\\s*(\\d+)").find(rawJson)
-        val exp = expMatch?.groupValues?.get(1)?.toLongOrNull()
-        if (exp != null) {
-            val remaining = (exp - System.currentTimeMillis() / 1000)
-            when {
-                remaining <= 0 -> "Expired"
-                remaining < 60 -> "${remaining}s remaining"
-                else -> "${remaining / 60}m remaining"
-            }
-        } else {
-            "Unknown"
-        }
-    }
-
     val issuer = remember(rawJson) {
         Regex("\"iss\"\\s*:\\s*\"([^\"]+)\"").find(rawJson)?.groupValues?.get(1) ?: "—"
     }
@@ -587,25 +552,6 @@ private fun TokenDebugScreen(onBack: () -> Unit) {
             Text(text = "Token debug", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(Modifier.height(2.dp))
             Text(text = "Access token and claims", fontSize = 13.sp, color = TextMuted)
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Expiry badge
-        Row(modifier = Modifier.padding(horizontal = 24.dp)) {
-            val isExpired = expiryText == "Expired"
-            Text(
-                text = if (isExpired) "Expired" else "Expires: $expiryText",
-                fontSize = 12.sp,
-                color = if (isExpired) ErrorRed else SuccessGreen,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .background(
-                        if (isExpired) ErrorRed.copy(alpha = 0.1f) else SuccessGreen.copy(alpha = 0.1f),
-                        RoundedCornerShape(20.dp),
-                    )
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
         }
 
         Spacer(Modifier.height(16.dp))
@@ -800,14 +746,5 @@ private fun userDisplayName(user: User?): String {
     val given = user.claims?.get("given_name") as? String ?: ""
     val family = user.claims?.get("family_name") as? String ?: ""
     val full = listOf(given, family).filter { it.isNotEmpty() }.joinToString(" ")
-    return full.ifEmpty { user.displayName?.takeIf { it.isNotEmpty() } ?: user.username ?: user.email?.substringBefore("@") ?: "User" }
-}
-
-private fun userInitials(displayName: String): String {
-    val words = displayName.trim().split(" ").filter { it.isNotEmpty() }
-    return when {
-        words.size >= 2 -> "${words[0].first().uppercaseChar()}${words[1].first().uppercaseChar()}"
-        words.size == 1 -> words[0].first().uppercaseChar().toString()
-        else -> "U"
-    }
+    return full.ifEmpty { user.displayName?.takeIf { it.isNotEmpty() } ?: user.username ?: user.email?.substringBefore("@") ?: "Guest" }
 }

@@ -43,8 +43,11 @@ import kotlinx.coroutines.CancellationException
  * `credentialId`/`clientDataJSON`/`authenticatorData`/`signature`/`userHandle` (assertion) or
  * `credentialId`/`clientDataJSON`/`attestationObject` (attestation) input maps the flow expects
  * on the next `/flow/execute` submit.
+ *
+ * Public so consumers bridging the SDK through another layer (e.g. the Flutter plugin's
+ * platform channel) can drive the same ceremony the Compose components use internally.
  */
-internal class PasskeyClient(
+class PasskeyClient(
     private val credentialManager: (Context) -> CredentialManager = { context -> CredentialManager.create(context) },
 ) {
     /** Performs a WebAuthn assertion ceremony (sign-in with an existing passkey). */

@@ -62,5 +62,17 @@ object DefaultStrings {
             "inviteUser.email" to "Email",
             "inviteUser.submit" to "Send invite",
             "inviteUser.loading" to "Sending…",
+            "select.placeholder" to "Select an option",
+            "select.empty" to "No results found.",
+            "select.loading" to "Loading…",
+            "select.loadingMore" to "Loading more…",
+            "select.loadMore" to "Load more",
+            "select.required" to "required",
+            "userSelect.placeholder" to "Select a user",
+            "userSelect.empty" to "No users found.",
+            "authFlowSelect.placeholder" to "Select a login flow",
+            "authFlowSelect.empty" to "No login flows found.",
+            "userTypeSelect.placeholder" to "Select a user type",
+            "userTypeSelect.empty" to "No user types found.",
         )
 }

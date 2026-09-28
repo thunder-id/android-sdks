@@ -4,6 +4,7 @@
 package dev.thunderid.android.management
 
 import com.google.gson.Gson
+import dev.thunderid.android.FlowType
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.InMemoryStorageAdapter
 import dev.thunderid.android.ThunderIDClient
@@ -184,5 +185,105 @@ class ManagementApiTest {
                 assertEquals(ThunderIDErrorCode.INVALID_INPUT, e.code)
             }
             assertTrue(recorder.requests.isEmpty())
+        }
+
+    @Test
+    fun `flows list sends the flow type and paging`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            recorder.respond(
+                """{"totalResults":75,"startIndex":31,"count":1,"flows":[{"id":"flow-1","handle":"password",""" +
+                    """"name":"Password login","flowType":"AUTHENTICATION","activeVersion":2,"isReadOnly":false,""" +
+                    """"createdAt":"2026-01-01","updatedAt":"2026-01-02"}]}""",
+            )
+
+            val page = client(recorder).flows.list(limit = 30, offset = 30, flowType = FlowType.AUTHENTICATION)
+
+            assertEquals(75, page.totalResults)
+            assertEquals("flow-1", page.flows.first().id)
+            assertEquals("Password login", page.flows.first().name)
+            val request = recorder.requests.single()
+            assertEquals("GET", request.method)
+            assertEquals("$baseUrl/flows?flowType=AUTHENTICATION&limit=30&offset=30", request.url)
+            assertEquals("Bearer admin-token", request.headers["Authorization"])
+        }
+
+    @Test
+    fun `flows list without a flow type sends no filter and tolerates missing optional fields`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            recorder.respond(
+                """{"totalResults":1,"startIndex":1,"count":1,"flows":""" +
+                    """[{"id":"f","handle":"h","name":"N","flowType":"REGISTRATION"}]}""",
+            )
+
+            val page = client(recorder).flows.list()
+
+            assertNull(page.flows.first().activeVersion)
+            assertEquals("$baseUrl/flows", recorder.requests.single().url)
+        }
+
+    @Test
+    fun `user types list sends paging and decodes handles`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            recorder.respond(
+                """{"totalResults":2,"startIndex":1,"count":2,"types":[""" +
+                    """{"id":"type-1","handle":"employee","displayName":"Staff","ouId":"ou-1",""" +
+                    """"allowSelfRegistration":false,"isReadOnly":false},""" +
+                    """{"id":"type-2","handle":"contractor","displayName":"Staff"}]}""",
+            )
+
+            val page = client(recorder).userTypes.list(limit = 30, offset = 0)
+
+            assertEquals(listOf("employee", "contractor"), page.types.map { it.handle })
+            assertEquals("$baseUrl/user-types?limit=30&offset=0", recorder.requests.single().url)
+        }
+
+    @Test
+    fun `flow and user type endpoint overrides target the resource server`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            recorder.respond("""{"totalResults":0,"startIndex":1,"count":0,"flows":[],"types":[]}""")
+            val endpoints =
+                ThunderIDEndpoints(flows = "https://rs.example.com/flows/", userTypes = "https://rs.example.com/user-types")
+            val client = client(recorder, endpoints)
+
+            client.flows.list(flowType = FlowType.AUTHENTICATION)
+            client.userTypes.list(limit = 10)
+
+            assertEquals(
+                listOf("https://rs.example.com/flows?flowType=AUTHENTICATION", "https://rs.example.com/user-types?limit=10"),
+                recorder.requests.map { it.url },
+            )
+        }
+
+    @Test
+    fun `flow and user type lists require initialization`() {
+        for (access in listOf({ ThunderIDClient().flows }, { ThunderIDClient().userTypes })) {
+            try {
+                access()
+                fail("Expected IAMException")
+            } catch (e: IAMException) {
+                assertEquals(ThunderIDErrorCode.SDK_NOT_INITIALIZED, e.code)
+            }
+        }
+    }
+
+    @Test
+    fun `forbidden on the flow and user type lists has its own code`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            recorder.respond("{}", 403)
+            val client = client(recorder)
+
+            for (list in listOf<suspend () -> Any>({ client.flows.list() }, { client.userTypes.list() })) {
+                try {
+                    list()
+                    fail("Expected FORBIDDEN")
+                } catch (e: IAMException) {
+                    assertEquals(ThunderIDErrorCode.FORBIDDEN, e.code)
+                }
+            }
         }
 }

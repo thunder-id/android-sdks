@@ -117,7 +117,9 @@ fun SignUp(
         ) {
             BasicText(i18n.resolve("signUp.title"))
             state.error?.let { BasicText(it) }
-            state.inputs.forEach { input ->
+            // USER_SELECT is skipped, never rendered as a free-text field.
+            if (state.inputs.any { it.type == "USER_SELECT" }) SkippedUserSelect("SignUpFlow")
+            state.inputs.filter { it.type != "USER_SELECT" }.forEach { input ->
                 BasicTextField(
                     value = state.fieldValue(input.name),
                     onValueChange = { state.setField(input.name, it) },

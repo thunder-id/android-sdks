@@ -60,5 +60,15 @@ object DefaultStrings {
             "inviteUser.email" to "Email",
             "inviteUser.submit" to "Send invite",
             "inviteUser.loading" to "Sending…",
+            "pagedSelect.placeholder" to "Select an option",
+            "pagedSelect.loading" to "Loading…",
+            "pagedSelect.loadingMore" to "Loading more…",
+            "pagedSelect.empty" to "No options found.",
+            "pagedSelect.loadMore" to "Load more",
+            "pagedSelect.retry" to "Retry",
+            "pagedSelect.loadError" to "Failed to load options.",
+            "userSelect.placeholder" to "Select a user",
+            "userSelect.empty" to "No users found.",
+            "userSelect.loadError" to "Failed to load users.",
         )
 }

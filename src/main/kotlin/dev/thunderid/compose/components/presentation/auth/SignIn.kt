@@ -247,7 +247,9 @@ fun SignIn(
                     )
                 }
             } else {
-                signInState.inputs.forEach { input ->
+                // USER_SELECT is skipped, never rendered as a free-text field.
+                if (signInState.inputs.any { it.type == "USER_SELECT" }) SkippedUserSelect("SignInFlow")
+                signInState.inputs.filter { it.type != "USER_SELECT" }.forEach { input ->
                     val isPassword = input.type == "PASSWORD_INPUT"
                     OutlinedTextField(
                         value = signInState.fieldValue(input.name),
@@ -346,6 +348,10 @@ fun FlowComponentView(
             ActionComponentView(component = component, signInState = signInState, i18n = i18n, modifier = modifier)
         }
 
+        component.type == "USER_SELECT" -> {
+            SkippedUserSelect("SignInFlow")
+        }
+
         component.type?.endsWith("_INPUT") == true -> {
             FieldComponentView(component = component, signInState = signInState, modifier = modifier)
         }
@@ -353,6 +359,17 @@ fun FlowComponentView(
         else -> {
             Unit
         }
+    }
+}
+
+/**
+ * Renders nothing for a `USER_SELECT` node and logs one warning. The picker needs a signed-in
+ * user's token, which does not exist during sign-in or sign-up.
+ */
+@Composable
+internal fun SkippedUserSelect(logTag: String) {
+    LaunchedEffect(Unit) {
+        android.util.Log.w(logTag, "USER_SELECT is only supported where a signed-in user's token is available")
     }
 }
 

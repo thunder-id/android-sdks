@@ -4,6 +4,7 @@
 package dev.thunderid.compose.components.presentation.auth
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +57,9 @@ import dev.thunderid.android.FlowInput
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowType
 import dev.thunderid.android.IAMException
+import dev.thunderid.android.KeyValuePair
+import dev.thunderid.android.ThunderIDErrorCode
+import dev.thunderid.android.auth.FederatedAuthSession
 import dev.thunderid.android.auth.PasskeyClient
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
@@ -66,6 +71,8 @@ import dev.thunderid.compose.components.exposeTestTagsAsResourceIds
 import dev.thunderid.compose.i18n.FlowTemplateResolver
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /** State passed to the [BaseSignIn] builder slot. */
@@ -76,6 +83,10 @@ class SignInState {
     var actions by mutableStateOf<List<FlowAction>>(emptyList())
         internal set
     var components by mutableStateOf<List<FlowComponent>>(emptyList())
+        internal set
+
+    /** The step's `additionalData`, read by data-bound display components through their `source`. */
+    var additionalData by mutableStateOf<Map<String, Any>>(emptyMap())
         internal set
     var templateResolver by mutableStateOf<FlowTemplateResolver?>(null)
         internal set
@@ -124,6 +135,7 @@ class SignInState {
         inputs = response.data?.inputs ?: emptyList()
         val flowComponents = response.data?.meta?.components ?: emptyList()
         components = flowComponents
+        additionalData = response.data?.additionalData ?: emptyMap()
         actions = enrichActions(response.data?.actions ?: emptyList(), flowComponents)
         seedFieldValues(flowComponents)
     }
@@ -181,6 +193,12 @@ private fun flattenInputNames(components: List<FlowComponent>): List<String> {
 private fun FlowAction.identifierKey(): String? = ref ?: id
 
 private fun FlowComponent.identifierKey(): String? = ref ?: id
+
+/**
+ * Whether a non-TRIGGER action asks for the outlined, secondary look rather than the filled primary
+ * one. A missing variant keeps the filled look, so flows that never set one render as before.
+ */
+internal fun isOutlinedVariant(variant: String?): Boolean = variant?.uppercase() in setOf("SECONDARY", "OUTLINED")
 
 /**
  * Fills in any `null` presentation fields on the flat `actions` array (label, eventType,
@@ -319,7 +337,7 @@ fun FlowComponentView(
                     text = text,
                     modifier = modifier,
                     style =
-                        if (component.variant == "HEADING_1") {
+                        if (component.variant?.startsWith("HEADING_") == true) {
                             MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
                         } else {
                             MaterialTheme.typography.bodyMedium
@@ -348,6 +366,21 @@ fun FlowComponentView(
 
         component.type?.endsWith("_INPUT") == true -> {
             FieldComponentView(component = component, signInState = signInState, modifier = modifier)
+        }
+
+        component.type == "KEY_VALUE_LIST" -> {
+            val pairs =
+                KeyValuePair
+                    .list(component.source?.let { signInState.additionalData[it] })
+                    .map { it.copy(label = resolver?.resolve(it.label) ?: it.label) }
+            // An empty panel tells the user nothing, so a list with no pairs renders nothing at all.
+            if (pairs.isNotEmpty()) {
+                KeyValueList(
+                    label = resolver?.resolve(component.label) ?: component.label ?: "",
+                    pairs = pairs,
+                    modifier = modifier,
+                )
+            }
         }
 
         else -> {
@@ -452,6 +485,20 @@ private fun ActionComponentView(
                     modifier = taggedModifier,
                     disabled = isBlocked,
                 )
+            }
+        }
+    } else if (isOutlinedVariant(action.variant)) {
+        // Stock M3 outlined button so it pairs with the filled primary Button below; the
+        // federated trigger chrome (TriggerButtonStyle) has a different shape and type scale.
+        OutlinedButton(
+            onClick = { signInState.submit(actionId) },
+            enabled = !signInState.isLoading,
+            modifier = taggedModifier.fillMaxWidth(),
+        ) {
+            if (isSpinning) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                Text(label)
             }
         }
     } else {
@@ -602,7 +649,17 @@ fun BaseSignIn(
                     )
                 val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
                 val response = thunderState.client.signIn(payload = payload, request = request)
-                handleSignInResponse(response, signInState, thunderState, request, context, passkeyClient, onComplete, onError)
+                handleSignInResponse(
+                    response,
+                    actionId,
+                    signInState,
+                    thunderState,
+                    request,
+                    context,
+                    passkeyClient,
+                    onComplete,
+                    onError,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -627,7 +684,17 @@ fun BaseSignIn(
                 "Flow initiated: status=${response.flowStatus} " +
                     "inputs=${response.data?.inputs?.size ?: 0} actions=${response.data?.actions?.size ?: 0}",
             )
-            handleSignInResponse(response, signInState, thunderState, request, context, passkeyClient, onComplete, onError)
+            handleSignInResponse(
+                response,
+                null,
+                signInState,
+                thunderState,
+                request,
+                context,
+                passkeyClient,
+                onComplete,
+                onError,
+            )
             try {
                 val metaMap = thunderState.client.getFlowMeta(applicationId)
                 signInState.templateResolver = FlowTemplateResolver(metaMap)
@@ -650,8 +717,9 @@ fun BaseSignIn(
     Box(modifier = modifier) { content(signInState) }
 }
 
-private suspend fun handleSignInResponse(
+internal suspend fun handleSignInResponse(
     response: EmbeddedFlowResponse,
+    actionId: String?,
     signInState: SignInState,
     thunderState: ThunderIDState,
     request: EmbeddedFlowRequestConfig,
@@ -680,6 +748,21 @@ private suspend fun handleSignInResponse(
                     challengeToken = response.challengeToken,
                     passkeyChallenge = passkeyChallenge,
                     passkeyCreationOptions = passkeyCreationOptions,
+                    signInState = signInState,
+                    thunderState = thunderState,
+                    request = request,
+                    context = context,
+                    passkeyClient = passkeyClient,
+                    onComplete = onComplete,
+                    onError = onError,
+                )
+                return
+            }
+
+            if (response.type == "REDIRECTION") {
+                followFederatedRedirect(
+                    response = response,
+                    actionId = actionId,
                     signInState = signInState,
                     thunderState = thunderState,
                     request = request,
@@ -731,12 +814,101 @@ private suspend fun performPasskeyCeremony(
             }
         val nextPayload = EmbeddedSignInPayload(flowId = flowId, inputs = inputs, challengeToken = challengeToken)
         val nextResponse = thunderState.client.signIn(payload = nextPayload, request = request)
-        handleSignInResponse(nextResponse, signInState, thunderState, request, context, passkeyClient, onComplete, onError)
+        handleSignInResponse(
+            nextResponse,
+            null,
+            signInState,
+            thunderState,
+            request,
+            context,
+            passkeyClient,
+            onComplete,
+            onError,
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         android.util.Log.e("SignInFlow", "Passkey ceremony failed (${diagnosticLabel(e)})")
         val msg = e.message ?: "Passkey authentication failed"
+        signInState.error = msg
+        onError?.invoke(msg)
+    }
+}
+
+/**
+ * Follows a `REDIRECTION` step, which a federated/social TRIGGER action answers with: opens the
+ * provider's `redirectURL` in a Custom Tab through [FederatedAuthSession], and resubmits the flow
+ * with the `code` the provider's callback carries. The host Activity hands that callback to
+ * [FederatedAuthSession.onRedirect]. Dismissing the browser leaves the step as it was, with no
+ * error, so the user can pick an option again.
+ */
+private suspend fun followFederatedRedirect(
+    response: EmbeddedFlowResponse,
+    actionId: String?,
+    signInState: SignInState,
+    thunderState: ThunderIDState,
+    request: EmbeddedFlowRequestConfig,
+    context: Context,
+    passkeyClient: PasskeyClient,
+    onComplete: (() -> Unit)?,
+    onError: ((String) -> Unit)?,
+) {
+    val redirectUrl = response.data?.redirectURL
+    val flowId = response.flowId ?: signInState.flowId
+    if (redirectUrl.isNullOrEmpty() || flowId == null) {
+        val msg = thunderState.i18n.resolve("signIn.federatedError")
+        signInState.error = msg
+        onError?.invoke(msg)
+        return
+    }
+    // The step may have rotated the challenge token. Keep it, so picking an option again after
+    // dismissing the browser does not resubmit a spent one.
+    signInState.flowId = flowId
+    signInState.challengeToken = response.challengeToken ?: signInState.challengeToken
+
+    val callback =
+        try {
+            FederatedAuthSession.launch(context, redirectUrl)
+        } catch (e: CancellationException) {
+            // Rethrow when this coroutine itself was cancelled; otherwise the user dismissed the browser.
+            currentCoroutineContext().ensureActive()
+            return
+        }
+
+    try {
+        val code =
+            callback.getQueryParameter("code")
+                ?: throw IAMException(ThunderIDErrorCode.INVALID_GRANT, "Authorization code missing from callback URL")
+        // Any app can send the host Activity a callback, so one that does not echo the state this
+        // sign-in was started with is not the provider's answer to it.
+        val state = callback.getQueryParameter("state")
+        if (state != Uri.parse(redirectUrl).getQueryParameter("state")) {
+            throw IAMException(ThunderIDErrorCode.INVALID_GRANT, "Callback state does not match the sign-in request")
+        }
+        val payload =
+            EmbeddedSignInPayload(
+                flowId = flowId,
+                actionId = actionId,
+                inputs = listOfNotNull("code" to code, state?.let { "state" to it }).toMap(),
+                challengeToken = signInState.challengeToken,
+            )
+        val nextResponse = thunderState.client.signIn(payload = payload, request = request)
+        handleSignInResponse(
+            nextResponse,
+            actionId,
+            signInState,
+            thunderState,
+            request,
+            context,
+            passkeyClient,
+            onComplete,
+            onError,
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.e("SignInFlow", "Federated sign-in failed (${diagnosticLabel(e)})")
+        val msg = e.message ?: thunderState.i18n.resolve("signIn.federatedError")
         signInState.error = msg
         onError?.invoke(msg)
     }

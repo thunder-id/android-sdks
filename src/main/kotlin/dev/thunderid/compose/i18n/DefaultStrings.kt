@@ -12,6 +12,7 @@ object DefaultStrings {
             "signIn.submit" to "Continue",
             "signIn.loading" to "Signing in…",
             "signIn.error" to "Sign-in failed",
+            "signIn.federatedError" to "Could not start federated sign-in",
             "signUp.button" to "Sign up",
             "signUp.title" to "Create account",
             "signUp.submit" to "Create account",

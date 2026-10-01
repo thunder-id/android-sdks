@@ -156,6 +156,8 @@ data class FlowStepData(
     val inputs: List<FlowInput>? = null,
     val meta: FlowMeta? = null,
     val additionalData: Map<String, Any>? = null,
+    /** The provider URL a `REDIRECTION` step (a federated/social TRIGGER action) sends the user to. */
+    val redirectURL: String? = null,
 )
 
 data class FlowAction(
@@ -190,5 +192,7 @@ data class FlowComponent(
     val eventType: String? = null,
     val align: String? = null,
     @SerializedName("image") val icon: String? = null,
+    /** The `additionalData` key a data-bound display component (e.g. `KEY_VALUE_LIST`) reads its value from. */
+    val source: String? = null,
     val components: List<FlowComponent>? = null,
 )

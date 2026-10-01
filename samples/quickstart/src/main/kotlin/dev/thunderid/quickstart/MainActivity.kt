@@ -3,6 +3,7 @@
 
 package dev.thunderid.quickstart
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,6 +12,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import dev.thunderid.android.EncryptedStorageAdapter
 import dev.thunderid.android.ThunderIDConfig
+import dev.thunderid.android.auth.FederatedAuthSession
 import dev.thunderid.compose.ThunderIDProvider
 
 // Matches the ThunderID blue used throughout AuthScreen/HomeScreen — the SDK's form
@@ -52,5 +54,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.data?.let(FederatedAuthSession::onRedirect)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // A callback arrives in onNewIntent before this runs, so a sign-in still pending here means
+        // the user dismissed the browser.
+        FederatedAuthSession.cancelIfPending()
     }
 }

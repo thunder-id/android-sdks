@@ -6,7 +6,9 @@ package dev.thunderid.compose.components.presentation.auth
 import dev.thunderid.android.FlowAction
 import dev.thunderid.android.FlowComponent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SignInTest {
@@ -37,5 +39,19 @@ class SignInTest {
 
         assertEquals(1, enriched.size)
         assertNull(enriched[0].label)
+    }
+
+    @Test
+    fun `isOutlinedVariant outlines secondary and outlined actions`() {
+        assertTrue(isOutlinedVariant("SECONDARY"))
+        assertTrue(isOutlinedVariant("secondary"))
+        assertTrue(isOutlinedVariant("OUTLINED"))
+    }
+
+    @Test
+    fun `isOutlinedVariant keeps primary and missing variants filled`() {
+        assertFalse(isOutlinedVariant("PRIMARY"))
+        assertFalse(isOutlinedVariant(null))
+        assertFalse(isOutlinedVariant(""))
     }
 }

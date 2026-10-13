@@ -8,7 +8,9 @@ import dev.thunderid.android.auth.PKCEManager
 import dev.thunderid.android.http.HttpClient
 import dev.thunderid.android.management.AgentsClient
 import dev.thunderid.android.management.ApplicationsClient
+import dev.thunderid.android.management.FlowsClient
 import dev.thunderid.android.management.ManagementTransport
+import dev.thunderid.android.management.UserTypesClient
 import dev.thunderid.android.management.UsersClient
 import dev.thunderid.android.token.JWKSCache
 import dev.thunderid.android.token.TokenRefresher
@@ -90,6 +92,14 @@ class ThunderIDClient {
     /** Agent management operations. Throws until [initialize] has run. */
     val agents: AgentsClient
         get() = AgentsClient(managementTransport("agents") { it.agents })
+
+    /** Flow listing. Throws until [initialize] has run. */
+    val flows: FlowsClient
+        get() = FlowsClient(managementTransport("flows") { it.flows })
+
+    /** User type listing. Throws until [initialize] has run. */
+    val userTypes: UserTypesClient
+        get() = UserTypesClient(managementTransport("user-types") { it.userTypes })
 
     private fun managementTransport(
         collection: String,

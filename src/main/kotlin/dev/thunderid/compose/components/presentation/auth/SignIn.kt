@@ -238,6 +238,7 @@ fun SignIn(
                 // meaningfully interact with.
                 FlowErrorBanner(message = error)
             } else if (signInState.components.isNotEmpty()) {
+                if (containsPagedSelect(signInState.components)) SkippedPagedSelect("SignInFlow")
                 signInState.components.forEach { component ->
                     FlowComponentView(
                         component = component,
@@ -247,7 +248,9 @@ fun SignIn(
                     )
                 }
             } else {
-                signInState.inputs.forEach { input ->
+                // Picker inputs are skipped, never rendered as a free-text field.
+                if (signInState.inputs.any { isPagedSelectType(it.type) }) SkippedPagedSelect("SignInFlow")
+                signInState.inputs.filterNot { isPagedSelectType(it.type) }.forEach { input ->
                     val isPassword = input.type == "PASSWORD_INPUT"
                     OutlinedTextField(
                         value = signInState.fieldValue(input.name),
@@ -344,6 +347,10 @@ fun FlowComponentView(
 
         component.type == "ACTION" -> {
             ActionComponentView(component = component, signInState = signInState, i18n = i18n, modifier = modifier)
+        }
+
+        isPagedSelectType(component.type) -> {
+            Unit
         }
 
         component.type?.endsWith("_INPUT") == true -> {

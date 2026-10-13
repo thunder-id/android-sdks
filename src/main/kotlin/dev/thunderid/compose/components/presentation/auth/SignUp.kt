@@ -117,7 +117,9 @@ fun SignUp(
         ) {
             BasicText(i18n.resolve("signUp.title"))
             state.error?.let { BasicText(it) }
-            state.inputs.forEach { input ->
+            // Picker inputs are skipped, never rendered as a free-text field.
+            if (state.inputs.any { isPagedSelectType(it.type) }) SkippedPagedSelect("SignUpFlow")
+            state.inputs.filterNot { isPagedSelectType(it.type) }.forEach { input ->
                 BasicTextField(
                     value = state.fieldValue(input.name),
                     onValueChange = { state.setField(input.name, it) },

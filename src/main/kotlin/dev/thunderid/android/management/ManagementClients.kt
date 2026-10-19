@@ -3,6 +3,7 @@
 
 package dev.thunderid.android.management
 
+import dev.thunderid.android.FlowType
 import dev.thunderid.android.ThunderIDFetcher
 
 /**
@@ -93,6 +94,41 @@ class UsersClient internal constructor(
         id: String,
         fetcher: ThunderIDFetcher? = null,
     ) = transport.delete(id, fetcher)
+}
+
+/**
+ * Flow listing, reached through `ThunderIDClient.flows`.
+ * Each call accepts an optional [ThunderIDFetcher] that takes precedence over `ThunderIDConfig.http.fetcher`.
+ */
+class FlowsClient internal constructor(
+    private val transport: ManagementTransport,
+) {
+    /** Returns a page of flows, optionally restricted to one [flowType]. */
+    suspend fun list(
+        limit: Int? = null,
+        offset: Int? = null,
+        flowType: FlowType? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): ManagedFlowListResponse =
+        transport.list(
+            mapOf("flowType" to flowType?.value, "limit" to limit?.toString(), "offset" to offset?.toString()),
+            fetcher,
+        )
+}
+
+/**
+ * User type listing, reached through `ThunderIDClient.userTypes`.
+ * Each call accepts an optional [ThunderIDFetcher] that takes precedence over `ThunderIDConfig.http.fetcher`.
+ */
+class UserTypesClient internal constructor(
+    private val transport: ManagementTransport,
+) {
+    /** Returns a page of user types. */
+    suspend fun list(
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): ManagedUserTypeListResponse = transport.list(mapOf("limit" to limit?.toString(), "offset" to offset?.toString()), fetcher)
 }
 
 /**

@@ -269,6 +269,7 @@ fun SignIn(
                 // meaningfully interact with.
                 FlowErrorBanner(message = error)
             } else if (signInState.components.isNotEmpty()) {
+                if (containsResourceSelect(signInState.components)) SkippedResourceSelect("SignInFlow")
                 signInState.components.forEach { component ->
                     FlowComponentView(
                         component = component,
@@ -278,7 +279,9 @@ fun SignIn(
                     )
                 }
             } else {
-                signInState.inputs.forEach { input ->
+                // Picker inputs are skipped, never rendered as a free-text field.
+                if (signInState.inputs.any { isResourceSelectType(it.type) }) SkippedResourceSelect("SignInFlow")
+                signInState.inputs.filterNot { isResourceSelectType(it.type) }.forEach { input ->
                     val isPassword = input.type == "PASSWORD_INPUT"
                     OutlinedTextField(
                         value = signInState.fieldValue(input.name),
@@ -388,6 +391,10 @@ internal fun FlowStepComponentView(
 
         component.type == "ACTION" -> {
             ActionComponentView(component = component, state = state, i18n = i18n, modifier = modifier)
+        }
+
+        isResourceSelectType(component.type) -> {
+            Unit
         }
 
         component.type?.endsWith("_INPUT") == true -> {

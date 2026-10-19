@@ -58,6 +58,7 @@ fun SignUp(
             // The form stays below the error so the user can correct their input and retry.
             state.error?.let { FlowErrorBanner(message = it) }
             if (state.components.isNotEmpty()) {
+                if (containsResourceSelect(state.components)) SkippedResourceSelect("SignUpFlow")
                 state.components.forEach { component ->
                     FlowStepComponentView(
                         component = component,
@@ -68,7 +69,9 @@ fun SignUp(
                 }
             } else {
                 BasicText(i18n.resolve("signUp.title"))
-                state.inputs.forEach { input ->
+                // Picker inputs are skipped, never rendered as a free-text field.
+                if (state.inputs.any { isResourceSelectType(it.type) }) SkippedResourceSelect("SignUpFlow")
+                state.inputs.filterNot { isResourceSelectType(it.type) }.forEach { input ->
                     BasicTextField(
                         value = state.fieldValue(input.name),
                         onValueChange = { state.setField(input.name, it) },

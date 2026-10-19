@@ -48,4 +48,6 @@ data class ThunderIDEndpoints(
     val agents: String? = null,
     val applications: String? = null,
     val users: String? = null,
+    val flows: String? = null,
+    val userTypes: String? = null,
 )

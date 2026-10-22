@@ -8,8 +8,11 @@ import dev.thunderid.android.auth.PKCEManager
 import dev.thunderid.android.http.HttpClient
 import dev.thunderid.android.management.AgentsClient
 import dev.thunderid.android.management.ApplicationsClient
+import dev.thunderid.android.management.GroupsClient
 import dev.thunderid.android.management.ManagementTransport
+import dev.thunderid.android.management.RolesClient
 import dev.thunderid.android.management.UsersClient
+import dev.thunderid.android.management.getTokenPermissions
 import dev.thunderid.android.token.JWKSCache
 import dev.thunderid.android.token.TokenRefresher
 import dev.thunderid.android.token.TokenStore
@@ -85,11 +88,30 @@ class ThunderIDClient {
 
     /** User management operations. Throws until [initialize] has run. */
     val users: UsersClient
-        get() = UsersClient(managementTransport("users") { it.users })
+        get() = UsersClient(managementTransport("users") { it.users }, managementTransport("user-types") { it.userTypes })
 
     /** Agent management operations. Throws until [initialize] has run. */
     val agents: AgentsClient
-        get() = AgentsClient(managementTransport("agents") { it.agents })
+        get() = AgentsClient(managementTransport("agents") { it.agents }, managementTransport("agent-types") { it.agentTypes })
+
+    /** Group management operations. Throws until [initialize] has run. */
+    val groups: GroupsClient
+        get() = GroupsClient(managementTransport("groups") { it.groups })
+
+    /** Role management operations. Throws until [initialize] has run. */
+    val roles: RolesClient
+        get() = RolesClient(managementTransport("roles") { it.roles })
+
+    /**
+     * Returns the permissions the signed-in user's access token carries, read from its `scopes` or `scope`
+     * claim. Returns an empty list when nobody is signed in or the token is not a JWT. Test one against a
+     * required permission with [dev.thunderid.android.management.hasPermission]. The result only decides what
+     * to show: the server still decides every request.
+     */
+    suspend fun getGrantedPermissions(): List<String> {
+        if (!runCatching { isSignedIn() }.getOrDefault(false)) return emptyList()
+        return getTokenPermissions(runCatching { getAccessToken() }.getOrNull())
+    }
 
     private fun managementTransport(
         collection: String,

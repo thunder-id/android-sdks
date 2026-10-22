@@ -100,6 +100,34 @@ class ManagementApiTest {
         }
 
     @Test
+    fun `agents can be filtered on the server`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            val client = client(recorder)
+            recorder.respond("""{"totalResults":0,"startIndex":1,"count":0,"agents":[]}""")
+            client.agents.list(limit = 5, filter = ManagementFilter.equality("name", "Calendar Agent"))
+
+            val url = recorder.requests.single().url
+            assertEquals(
+                "name eq \"Calendar Agent\"",
+                java.net
+                    .URI(url)
+                    .query
+                    .split("&")
+                    .first { it.startsWith("filter=") }
+                    .removePrefix("filter="),
+            )
+        }
+
+    @Test
+    fun `equality filters trim the value and reject invalid input`() {
+        assertEquals("username eq \"ada\"", ManagementFilter.equality("username", "  ada "))
+        assertEquals("name eq \"Say hi\"", ManagementFilter.equality("name", "Say \"hi\""))
+        assertEquals(null, ManagementFilter.equality("username", "   "))
+        assertEquals(null, ManagementFilter.equality("user name", "ada"))
+    }
+
+    @Test
     fun `create sends the payload without null fields`() =
         runTest {
             val recorder = RecordingFetcher()

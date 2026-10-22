@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
@@ -38,15 +39,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.presentation.user.UserAvatar
+import dev.thunderid.compose.management.GrantedPermissionsState
+import dev.thunderid.compose.management.rememberGrantedPermissions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -68,6 +73,8 @@ fun SessionScreen(
     var accessToken by remember { mutableStateOf<String?>(null) }
     var version by remember { mutableStateOf(0) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
+    // Read through the SDK: client.getGrantedPermissions(), re-read when the signed-in user changes.
+    val granted = rememberGrantedPermissions()
 
     LaunchedEffect(state.user, version) {
         accessToken = if (state.isSignedIn) runCatching { state.client.getAccessToken() }.getOrNull() else null
@@ -162,7 +169,7 @@ fun SessionScreen(
         }
 
         Segmented(
-            options = listOf("tokens" to "Tokens", "claims" to "Claims", "events" to "Events"),
+            options = listOf("tokens" to "Tokens", "claims" to "Claims", "permissions" to "Access", "events" to "Events"),
             selected = tab,
             onSelect = { tab = it },
         )
@@ -180,6 +187,10 @@ fun SessionScreen(
 
             "claims" -> {
                 ClaimsPanel(claims.ifEmpty { state.user?.claims.orEmpty() })
+            }
+
+            "permissions" -> {
+                PermissionsPanel(granted, signedIn = state.isSignedIn)
             }
 
             else -> {
@@ -341,6 +352,115 @@ private fun TokensPanel(tokens: List<TokenView>) {
                 lineHeight = 18.sp,
                 color = Color.White.copy(alpha = 0.5f),
             )
+        }
+    }
+}
+
+/**
+ * The permissions the access token grants, from rememberGrantedPermissions(), and what they unlock
+ * in the admin components, tested with GrantedPermissionsState.can() (the SDK's hasPermission()).
+ */
+@Composable
+private fun PermissionsPanel(
+    granted: GrantedPermissionsState,
+    signedIn: Boolean,
+) {
+    var probe by rememberSaveable { mutableStateOf("system:user:view") }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        when {
+            !signedIn -> {
+                EmptyNote("No permissions. Sign in to read the access token's scope or scopes claim.")
+            }
+
+            granted.isLoading -> {
+                EmptyNote("Reading granted permissions…")
+            }
+
+            granted.permissions.isEmpty() -> {
+                EmptyNote("The access token grants no permissions, or it is not a JWT.")
+            }
+
+            else -> {
+                ListCard {
+                    granted.permissions.sorted().forEachIndexed { index, permission ->
+                        Text(
+                            permission,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            fontSize = 12.5.sp,
+                            fontFamily = Pg.Mono,
+                            color = Pg.Accent,
+                        )
+                        if (index < granted.permissions.lastIndex) Hairline()
+                    }
+                }
+            }
+        }
+
+        SectionLabel("Admin components")
+        ListCard {
+            AdminPermissions.forEachIndexed { index, (permission, unlocks) ->
+                PermissionRow(permission, unlocks, granted.can(permission))
+                if (index < AdminPermissions.lastIndex) Hairline()
+            }
+        }
+
+        SectionLabel("Test a permission")
+        ListCard {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                BasicTextField(
+                    value = probe,
+                    onValueChange = { probe = it.trim() },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp, fontFamily = Pg.Mono),
+                    cursorBrush = SolidColor(Pg.Primary),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.05f))
+                            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+                val allowed = granted.can(probe)
+                Text(
+                    "can(\"$probe\") = $allowed",
+                    fontSize = 12.5.sp,
+                    fontFamily = Pg.Mono,
+                    color = if (allowed) Pg.PassSoft else Pg.FailSoft,
+                )
+            }
+        }
+        Text(
+            "A parent permission covers its children: system grants system:user:view. " +
+                "This only decides what to show; the server still decides every request.",
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            color = Color.White.copy(alpha = 0.5f),
+        )
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    permission: String,
+    unlocks: String,
+    allowed: Boolean,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(permission, fontSize = 12.5.sp, fontFamily = Pg.Mono, color = Pg.Text)
+            Text(unlocks, fontSize = 11.5.sp, color = Pg.TextMuted)
+        }
+        if (allowed) {
+            StatusPill("granted", Pg.PassSoft, Pg.Pass.copy(alpha = 0.12f))
+        } else {
+            StatusPill("denied", Pg.TextMuted, Pg.Control)
         }
     }
 }

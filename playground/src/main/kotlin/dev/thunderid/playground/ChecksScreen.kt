@@ -113,6 +113,7 @@ fun ChecksScreen(
                             if (index < defs.lastIndex) Hairline()
                         }
                     }
+                    if (section == "Endpoints") EndpointsCard(checks)
                 }
             }
         }
@@ -184,6 +185,55 @@ private fun Header(
                     Text("?", color = Pg.TextMuted, fontWeight = FontWeight.SemiBold)
                 }
             }
+        }
+    }
+}
+
+/**
+ * The management collection URLs: what config resolves to, where each comes from, and, after the
+ * endpoints check ran signed in, whether the SDK requested the same URL.
+ */
+@Composable
+private fun EndpointsCard(checks: ChecksController) {
+    val state = LocalThunderID.current
+    val config = runCatching { state.client.getConfiguration() }.getOrNull()
+    val baseUrl = config?.baseUrl ?: PlaygroundSettings.baseUrl
+    val endpoints = config?.endpoints ?: PlaygroundSettings.endpoints
+    ListCard {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("baseUrl", fontSize = 11.sp, color = Pg.TextFaint)
+            Text(baseUrl.ifBlank { "THUNDERID_BASE_URL not set" }, fontSize = 12.sp, fontFamily = Pg.Mono, color = Pg.Accent)
+        }
+        Hairline()
+        ManagementCollections.forEachIndexed { index, collection ->
+            val expected = collection.resolve(baseUrl, endpoints)
+            val observed = checks.observedEndpoints[collection.name]
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(collection.name, modifier = Modifier.weight(1f), fontSize = 12.5.sp, color = Pg.Text)
+                    val (label, color) =
+                        when {
+                            observed == null -> PlaygroundSettings.endpointSource(collection) to Pg.TextFaint
+                            observed == expected -> "SDK requested" to Pg.PassSoft
+                            else -> "SDK requested $observed" to Pg.FailSoft
+                        }
+                    Text(label, fontSize = 10.5.sp, fontFamily = Pg.Mono, color = color)
+                }
+                Text(
+                    expected,
+                    fontSize = 11.5.sp,
+                    fontFamily = Pg.Mono,
+                    color = Pg.TextMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (index < ManagementCollections.lastIndex) Hairline()
         }
     }
 }

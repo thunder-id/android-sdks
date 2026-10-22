@@ -62,5 +62,5 @@ object DefaultStrings {
             "inviteUser.email" to "Email",
             "inviteUser.submit" to "Send invite",
             "inviteUser.loading" to "Sending…",
-        )
+        ) + AdminStrings.all
 }

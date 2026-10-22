@@ -51,6 +51,7 @@ class ApplicationsClient internal constructor(
  */
 class UsersClient internal constructor(
     private val transport: ManagementTransport,
+    private val typesTransport: ManagementTransport,
 ) {
     /** Returns a page of users, each with its resolved `display` value. */
     suspend fun list(
@@ -93,6 +94,21 @@ class UsersClient internal constructor(
         id: String,
         fetcher: ThunderIDFetcher? = null,
     ) = transport.delete(id, fetcher)
+
+    /** Returns a page of the groups the user belongs to. */
+    suspend fun listGroups(
+        id: String,
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): MembershipGroupListResponse = transport.getSubResource(id, "groups", page(limit, offset), fetcher)
+
+    /** Returns a page of user types, from the `userTypes` collection. */
+    suspend fun listTypes(
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): ManagedUserTypeListResponse = typesTransport.list(page(limit, offset), fetcher)
 }
 
 /**
@@ -101,15 +117,27 @@ class UsersClient internal constructor(
  */
 class AgentsClient internal constructor(
     private val transport: ManagementTransport,
+    private val typesTransport: ManagementTransport,
 ) {
-    /** Returns a page of agents. */
+    /**
+     * Returns a page of agents.
+     *
+     * @param filter A server-side filter on a custom agent attribute, such as `name eq "Calendar Agent"`.
+     *   [ManagementFilter.equality] builds one.
+     */
     suspend fun list(
         limit: Int? = null,
         offset: Int? = null,
+        filter: String? = null,
         fetcher: ThunderIDFetcher? = null,
     ): AgentListResponse =
         transport.list(
-            mapOf("limit" to limit?.toString(), "offset" to offset?.toString(), "include" to "display"),
+            mapOf(
+                "limit" to limit?.toString(),
+                "offset" to offset?.toString(),
+                "filter" to filter,
+                "include" to "display",
+            ),
             fetcher,
         )
 
@@ -137,4 +165,170 @@ class AgentsClient internal constructor(
         id: String,
         fetcher: ThunderIDFetcher? = null,
     ) = transport.delete(id, fetcher)
+
+    /** Returns a page of the groups the agent belongs to. */
+    suspend fun listGroups(
+        id: String,
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): MembershipGroupListResponse = transport.getSubResource(id, "groups", page(limit, offset), fetcher)
+
+    /** Returns a page of the names of the roles assigned to the agent. */
+    suspend fun listRoles(
+        id: String,
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): AgentRoleListResponse = transport.getSubResource(id, "roles", page(limit, offset), fetcher)
+
+    /** Returns a page of agent types, from the `agentTypes` collection. */
+    suspend fun listTypes(
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): AgentTypeListResponse = typesTransport.list(page(limit, offset), fetcher)
 }
+
+/**
+ * Group management operations, reached through `ThunderIDClient.groups`.
+ * Each call accepts an optional [ThunderIDFetcher] that takes precedence over `ThunderIDConfig.http.fetcher`.
+ */
+class GroupsClient internal constructor(
+    private val transport: ManagementTransport,
+) {
+    /** Returns a page of groups. */
+    suspend fun list(
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): GroupListResponse = transport.list(page(limit, offset) + ("include" to "display"), fetcher)
+
+    /** Returns a single group. */
+    suspend fun get(
+        id: String,
+        fetcher: ThunderIDFetcher? = null,
+    ): Group = transport.get(id, mapOf("include" to "display"), fetcher)
+
+    /** Creates a group and returns it as the server stored it. */
+    suspend fun create(
+        group: CreateGroupRequest,
+        fetcher: ThunderIDFetcher? = null,
+    ): Group = transport.create(group, fetcher)
+
+    /** Replaces a group's name and description and returns the updated group. Members are left unchanged. */
+    suspend fun update(
+        id: String,
+        group: UpdateGroupRequest,
+        fetcher: ThunderIDFetcher? = null,
+    ): Group = transport.update(id, group, fetcher)
+
+    /** Deletes a group. */
+    suspend fun delete(
+        id: String,
+        fetcher: ThunderIDFetcher? = null,
+    ) = transport.delete(id, fetcher)
+
+    /** Returns a page of the group's members, each with its resolved `display` value. */
+    suspend fun listMembers(
+        id: String,
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): GroupMemberListResponse = transport.getSubResource(id, "members", mapOf("include" to "display") + page(limit, offset), fetcher)
+
+    /** Adds [members] to the group and returns the updated group. */
+    suspend fun addMembers(
+        id: String,
+        members: List<GroupMemberInput>,
+        fetcher: ThunderIDFetcher? = null,
+    ): Group = transport.postSubResource(id, "members/add", mapOf("members" to members), fetcher)
+
+    /** Removes [members] from the group and returns the updated group. */
+    suspend fun removeMembers(
+        id: String,
+        members: List<GroupMemberInput>,
+        fetcher: ThunderIDFetcher? = null,
+    ): Group = transport.postSubResource(id, "members/remove", mapOf("members" to members), fetcher)
+}
+
+/**
+ * Role management operations, reached through `ThunderIDClient.roles`.
+ * Each call accepts an optional [ThunderIDFetcher] that takes precedence over `ThunderIDConfig.http.fetcher`.
+ */
+class RolesClient internal constructor(
+    private val transport: ManagementTransport,
+) {
+    /** Returns a page of roles. */
+    suspend fun list(
+        limit: Int? = null,
+        offset: Int? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): RoleListResponse = transport.list(page(limit, offset), fetcher)
+
+    /** Returns a single role, with the permissions it grants. */
+    suspend fun get(
+        id: String,
+        fetcher: ThunderIDFetcher? = null,
+    ): Role = transport.get(id, fetcher = fetcher)
+
+    /** Creates a role and returns it as the server stored it. */
+    suspend fun create(
+        role: CreateRoleRequest,
+        fetcher: ThunderIDFetcher? = null,
+    ): Role = transport.create(role, fetcher)
+
+    /** Replaces a role's name, description and permissions and returns the updated role. */
+    suspend fun update(
+        id: String,
+        role: UpdateRoleRequest,
+        fetcher: ThunderIDFetcher? = null,
+    ): Role = transport.update(id, role, fetcher)
+
+    /** Deletes a role. */
+    suspend fun delete(
+        id: String,
+        fetcher: ThunderIDFetcher? = null,
+    ) = transport.delete(id, fetcher)
+
+    /**
+     * Returns a page of the role's assignees, each with its resolved `display` value. Set [type] to list
+     * only assignees of that kind.
+     */
+    suspend fun listAssignments(
+        id: String,
+        limit: Int? = null,
+        offset: Int? = null,
+        type: RoleAssigneeType? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): RoleAssignmentListResponse =
+        transport.getSubResource(
+            id,
+            "assignments",
+            mapOf("include" to "display") + page(limit, offset) + ("type" to type?.value),
+            fetcher,
+        )
+
+    /** Assigns the role to [assignments]. */
+    suspend fun addAssignments(
+        id: String,
+        assignments: List<RoleAssignmentInput>,
+        fetcher: ThunderIDFetcher? = null,
+    ) {
+        transport.postSubResource<Unit>(id, "assignments/add", mapOf("assignments" to assignments), fetcher)
+    }
+
+    /** Removes the role from [assignments]. */
+    suspend fun removeAssignments(
+        id: String,
+        assignments: List<RoleAssignmentInput>,
+        fetcher: ThunderIDFetcher? = null,
+    ) {
+        transport.postSubResource<Unit>(id, "assignments/remove", mapOf("assignments" to assignments), fetcher)
+    }
+}
+
+private fun page(
+    limit: Int?,
+    offset: Int?,
+): Map<String, String?> = mapOf("limit" to limit?.toString(), "offset" to offset?.toString())

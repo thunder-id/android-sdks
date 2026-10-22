@@ -21,12 +21,18 @@ import dev.thunderid.android.EmbeddedSignInPayload
 import dev.thunderid.android.FlowComponent
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.auth.FederatedAuthSession
+import dev.thunderid.android.management.GroupMemberType
+import dev.thunderid.android.management.RoleAssigneeType
+import dev.thunderid.android.management.getTokenPermissions
+import dev.thunderid.android.management.hasPermission
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.i18n.DefaultStrings
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.cert.X509Certificate
@@ -63,6 +69,17 @@ val CheckDefs =
         CheckDef("storage", "Session", "Secure token storage", "EncryptedStorageAdapter"),
         CheckDef("user", "Session", "User info", "client.getUser()"),
         CheckDef("orgs", "Session", "Organizations", "organizations()"),
+        CheckDef("endpoints", "Endpoints", "Management endpoints", "ThunderIDConfig.endpoints · ThunderIDFetcher"),
+        CheckDef("groups", "Management", "Groups", "client.groups.list() · get()"),
+        CheckDef("groupMembers", "Management", "Group members", "client.groups.listMembers()"),
+        CheckDef("roles", "Management", "Roles", "client.roles.list() · get()"),
+        CheckDef("roleAssignments", "Management", "Role assignments", "client.roles.listAssignments()"),
+        CheckDef("userGroups", "Management", "User groups", "client.users.listGroups()"),
+        CheckDef("userTypes", "Management", "User types", "client.users.listTypes()"),
+        CheckDef("agentTypes", "Management", "Agent types", "client.agents.listTypes()"),
+        CheckDef("agentGroups", "Management", "Agent groups", "client.agents.listGroups()"),
+        CheckDef("agentRoles", "Management", "Agent roles", "client.agents.listRoles()"),
+        CheckDef("permissions", "Management", "Permission checks", "getGrantedPermissions() · hasPermission()"),
         CheckDef("theme", "UI", "Theming and dark mode", "MaterialTheme · Material 3"),
         CheckDef("i18n", "UI", "Translations", "ThunderIDI18n"),
     )
@@ -81,6 +98,9 @@ class ChecksController(
         private set
     var healthNote by mutableStateOf("")
         private set
+
+    /** The collection URLs the SDK requested during the endpoints check, keyed by collection name. */
+    val observedEndpoints = mutableStateMapOf<String, String>()
 
     /** Set while the app-native SignIn sheet is open for the "native" check. */
     var signInSheetOpen by mutableStateOf(false)
@@ -190,6 +210,17 @@ class ChecksController(
             "storage" -> secureStorage()
             "user" -> userInfo(state)
             "orgs" -> unavailable("The Android SDK has no organizations API. Only ThunderIDConfig.organizationHandle exists.")
+            "endpoints" -> endpoints(state)
+            "groups" -> management(state) { groups(state) }
+            "groupMembers" -> management(state) { groupMembers(state) }
+            "roles" -> management(state) { roles(state) }
+            "roleAssignments" -> management(state) { roleAssignments(state) }
+            "userGroups" -> management(state) { userGroups(state) }
+            "userTypes" -> management(state) { userTypes(state) }
+            "agentTypes" -> management(state) { agentTypes(state) }
+            "agentGroups" -> management(state) { agentGroups(state) }
+            "agentRoles" -> management(state) { agentRoles(state) }
+            "permissions" -> permissions(state)
             "theme" -> theme(scheme)
             "i18n" -> translations()
             else -> fail("Unknown check")
@@ -369,6 +400,162 @@ class ChecksController(
         }
     }
 
+    private suspend fun endpoints(state: ThunderIDState): CheckResult {
+        val config = state.client.getConfiguration()
+        val expected = ManagementCollections.associate { it.name to it.resolve(config.baseUrl, config.endpoints) }
+        val baseHost = Uri.parse(config.baseUrl).authority
+        val elsewhere = expected.values.count { Uri.parse(it).authority != baseHost }
+        val split = if (elsewhere == 0) "all on the baseUrl host" else "$elsewhere on another host"
+        // The SDK resolves URLs inside its transport, and every management call asks for an access token
+        // before the fetcher runs, so the URLs can only be observed once signed in.
+        if (!state.isSignedIn) {
+            observedEndpoints.clear()
+            return idle("${expected.size} collections from config, $split. Sign in to verify the URLs the SDK requests.")
+        }
+        val mismatches = mutableListOf<String>()
+        ManagementCollections.forEach { collection ->
+            val probe = RecordingFetcher()
+            collection.probe(state.client, probe)
+            val url =
+                probe.request
+                    ?.url
+                    ?.substringBefore('?')
+                    .orEmpty()
+            observedEndpoints[collection.name] = url
+            if (url != expected[collection.name]) mismatches += "${collection.name}: $url"
+        }
+        return if (mismatches.isEmpty()) {
+            pass("${expected.size} collections requested where config says, $split")
+        } else {
+            fail("Unexpected URLs: ${mismatches.joinToString("; ")}")
+        }
+    }
+
+    /** Management calls send the signed-in user's access token, so they all need a session. */
+    private suspend fun management(
+        state: ThunderIDState,
+        check: suspend () -> CheckResult,
+    ): CheckResult = if (!state.isSignedIn) fail("Not signed in. Management calls send the access token.") else check()
+
+    private suspend fun groups(state: ThunderIDState): CheckResult {
+        val page = state.client.groups.list(limit = 5)
+        val first = page.groups.firstOrNull() ?: return pass("0 groups. Create one with GroupCreate in Components.")
+        ManagementFixtures.groupId = first.id
+        val group = state.client.groups.get(first.id)
+        return pass("${page.totalResults} groups: ${names(page.groups.map { it.name })}; get(${group.name}) ok")
+    }
+
+    private suspend fun groupMembers(state: ThunderIDState): CheckResult {
+        val id =
+            ManagementFixtures.groupId.ifBlank { null }
+                ?: state.client.groups
+                    .list(limit = 1)
+                    .groups
+                    .firstOrNull()
+                    ?.id
+                ?: return idle("No groups to list members of")
+        ManagementFixtures.groupId = id
+        val page = state.client.groups.listMembers(id, limit = 20)
+        val byType = GroupMemberType.entries.map { type -> "${page.members.count { it.type == type }} ${type.value}" }
+        return pass("${page.totalResults} members of $id: ${byType.joinToString(", ")}")
+    }
+
+    private suspend fun roles(state: ThunderIDState): CheckResult {
+        val page = state.client.roles.list(limit = 5)
+        val first = page.roles.firstOrNull() ?: return pass("0 roles. Create one with RoleCreate in Components.")
+        ManagementFixtures.roleId = first.id
+        val role = state.client.roles.get(first.id)
+        val granted = role.permissions.sumOf { it.permissions.size }
+        return pass("${page.totalResults} roles: ${names(page.roles.map { it.name })}; ${role.name} grants $granted permissions")
+    }
+
+    private suspend fun roleAssignments(state: ThunderIDState): CheckResult {
+        val id =
+            ManagementFixtures.roleId.ifBlank { null }
+                ?: state.client.roles
+                    .list(limit = 1)
+                    .roles
+                    .firstOrNull()
+                    ?.id
+                ?: return idle("No roles to list assignments of")
+        ManagementFixtures.roleId = id
+        val page = state.client.roles.listAssignments(id, limit = 20)
+        val users = state.client.roles.listAssignments(id, limit = 1, type = RoleAssigneeType.USER)
+        val byType = RoleAssigneeType.entries.map { type -> "${page.assignments.count { it.type == type }} ${type.value}" }
+        return pass("${page.totalResults} assignees of $id: ${byType.joinToString(", ")}; type=user filter ${users.totalResults}")
+    }
+
+    private suspend fun userGroups(state: ThunderIDState): CheckResult {
+        // The signed-in user's sub is its user ID in ThunderID.
+        val id = state.user?.sub ?: return fail("The signed-in user has no sub claim")
+        val page = state.client.users.listGroups(id, limit = 10)
+        ManagementFixtures.userId = id
+        return pass("Signed-in user is in ${page.totalResults} groups${namesSuffix(page.groups.map { it.name })}")
+    }
+
+    private suspend fun userTypes(state: ThunderIDState): CheckResult {
+        val page = state.client.users.listTypes(limit = 10)
+        return pass("${page.totalResults} user types${namesSuffix(page.types.map { it.handle })}")
+    }
+
+    private suspend fun agentTypes(state: ThunderIDState): CheckResult {
+        val page = state.client.agents.listTypes(limit = 10)
+        return pass("${page.totalResults} agent types${namesSuffix(page.types.map { it.handle })}")
+    }
+
+    private suspend fun firstAgentId(state: ThunderIDState): String? =
+        ManagementFixtures.agentId.ifBlank { null }
+            ?: state.client.agents
+                .list(limit = 1)
+                .agents
+                .firstOrNull()
+                ?.id
+                ?.also { ManagementFixtures.agentId = it }
+
+    private suspend fun agentGroups(state: ThunderIDState): CheckResult {
+        val id = firstAgentId(state) ?: return idle("No agents. Create one with AgentCreate in Components.")
+        val page = state.client.agents.listGroups(id, limit = 10)
+        return pass("Agent $id is in ${page.totalResults} groups${namesSuffix(page.groups.map { it.name })}")
+    }
+
+    private suspend fun agentRoles(state: ThunderIDState): CheckResult {
+        val id = firstAgentId(state) ?: return idle("No agents. Create one with AgentCreate in Components.")
+        val page = state.client.agents.listRoles(id, limit = 10)
+        return pass("Agent $id has ${page.totalResults} roles${namesSuffix(page.roles)}")
+    }
+
+    private suspend fun permissions(state: ThunderIDState): CheckResult {
+        // The hierarchy and claim parsing run offline against synthetic tokens.
+        val hierarchy =
+            hasPermission(listOf("system"), "system:user:view") &&
+                hasPermission(listOf("system:user:view"), "system:user:view") &&
+                !hasPermission(listOf("system:user"), "system:group:view") &&
+                !hasPermission(listOf("system:user:view"), "system:user") &&
+                hasPermission(emptyList(), "")
+        if (!hierarchy) return fail("hasPermission() does not follow the system > system:user > system:user:view hierarchy")
+        val fromScope = getTokenPermissions(unsignedJwt(JSONObject().put("scope", "openid system:user:view")))
+        val fromScopes = getTokenPermissions(unsignedJwt(JSONObject().put("scopes", JSONArray(listOf("system:group")))))
+        if (fromScope != listOf("openid", "system:user:view") || fromScopes != listOf("system:group")) {
+            return fail("getTokenPermissions() read scope=$fromScope, scopes=$fromScopes")
+        }
+        if (getTokenPermissions("opaque-token").isNotEmpty()) return fail("An opaque token yielded permissions")
+        if (!state.isSignedIn) return pass("Hierarchy and scope/scopes parsing ok. Sign in to read granted permissions.")
+        val granted = state.client.getGrantedPermissions()
+        val admin = AdminPermissions.count { (permission, _) -> hasPermission(granted, permission) }
+        return pass("${granted.size} granted; $admin of ${AdminPermissions.size} admin permissions; hierarchy ok")
+    }
+
+    private fun unsignedJwt(payload: JSONObject): String {
+        val flags = android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+
+        fun encode(json: String) = android.util.Base64.encodeToString(json.toByteArray(), flags)
+        return "${encode("""{"alg":"none"}""")}.${encode(payload.toString())}.sig"
+    }
+
+    private fun names(list: List<String>): String = list.take(3).joinToString(", ") + if (list.size > 3) ", …" else ""
+
+    private fun namesSuffix(list: List<String>): String = if (list.isEmpty()) "" else ": ${names(list)}"
+
     private suspend fun initiateFlow(state: ThunderIDState): EmbeddedFlowResponse {
         val applicationId = PlaygroundSettings.applicationId
         require(applicationId.isNotBlank()) { "THUNDERID_APPLICATION_ID is not set in config.properties" }
@@ -395,7 +582,7 @@ class ChecksController(
 
     private companion object {
         // Checks that do not need an initialized SDK.
-        val OFFLINE_CHECKS = setOf("biometric", "deeplink", "storage", "orgs", "theme", "i18n")
+        val OFFLINE_CHECKS = setOf("biometric", "deeplink", "storage", "orgs", "permissions", "theme", "i18n")
 
         // Development only: the local ThunderID server uses a self-signed certificate.
         fun trustAll(connection: HttpsURLConnection) {

@@ -37,11 +37,11 @@ data class ComponentSpec(
     val code: (story: String, props: Map<String, Any>) -> String,
 )
 
-private fun Map<String, Any>.text(key: String) = this[key] as? String ?: ""
+internal fun Map<String, Any>.text(key: String) = this[key] as? String ?: ""
 
-private fun Map<String, Any>.flag(key: String) = this[key] as? Boolean ?: false
+internal fun Map<String, Any>.flag(key: String) = this[key] as? Boolean ?: false
 
-private fun quote(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+internal fun quote(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 private const val BASE_MODIFIER =
     "Modifier\n        .background(Color.White, RoundedCornerShape(12.dp))\n        .padding(horizontal = 20.dp)"
@@ -210,4 +210,4 @@ val ComponentSpecs: List<ComponentSpec> =
                     "    onComplete = { /* signed in */ },\n    onError = { message -> /* show message */ },\n)"
             },
         ),
-    )
+    ) + AdminComponentSpecs + CustomRenderSpecs

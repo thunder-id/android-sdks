@@ -13,14 +13,20 @@ import dev.thunderid.android.ThunderIDFetcher
 import dev.thunderid.android.management.Agent
 import dev.thunderid.android.management.AgentListResponse
 import dev.thunderid.android.management.AgentQueryKeys
+import dev.thunderid.android.management.AgentRoleListResponse
+import dev.thunderid.android.management.AgentTypeListResponse
 import dev.thunderid.android.management.Application
 import dev.thunderid.android.management.ApplicationListResponse
 import dev.thunderid.android.management.ApplicationQueryKeys
 import dev.thunderid.android.management.ApplicationRequest
 import dev.thunderid.android.management.CreateAgentRequest
 import dev.thunderid.android.management.CreateManagedUserRequest
+import dev.thunderid.android.management.GroupQueryKeys
 import dev.thunderid.android.management.ManagedUser
 import dev.thunderid.android.management.ManagedUserListResponse
+import dev.thunderid.android.management.ManagedUserTypeListResponse
+import dev.thunderid.android.management.MembershipGroupListResponse
+import dev.thunderid.android.management.RoleQueryKeys
 import dev.thunderid.android.management.UpdateAgentRequest
 import dev.thunderid.android.management.UpdateManagedUserRequest
 import dev.thunderid.android.management.UserQueryKeys
@@ -114,9 +120,11 @@ fun rememberGetUsers(
     offset: Int? = null,
     filter: String? = null,
     fetcher: ThunderIDFetcher? = null,
+    enabled: Boolean = true,
 ): ResourceQueryState<ManagedUserListResponse> =
     rememberResourceQuery(
         listOf(UserQueryKeys.USERS, "filter=${filter.orEmpty()}", "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled = enabled,
     ) { it.users.list(limit, offset, filter, fetcher) }
 
 @Composable
@@ -141,6 +149,30 @@ fun rememberUpdateUser(fetcher: ThunderIDFetcher? = null): ResourceMutationState
     }) { client, (id, request) -> client.users.update(id, request, fetcher) }
 
 @Composable
+fun rememberGetUserGroups(
+    id: String?,
+    limit: Int? = null,
+    offset: Int? = null,
+    fetcher: ThunderIDFetcher? = null,
+): ResourceQueryState<MembershipGroupListResponse> =
+    rememberResourceQuery(
+        listOf(GroupQueryKeys.MEMBERSHIPS, "user", id.orEmpty(), "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled = id != null,
+    ) { it.users.listGroups(id!!, limit, offset, fetcher) }
+
+@Composable
+fun rememberGetUserTypes(
+    limit: Int? = null,
+    offset: Int? = null,
+    fetcher: ThunderIDFetcher? = null,
+    enabled: Boolean = true,
+): ResourceQueryState<ManagedUserTypeListResponse> =
+    rememberResourceQuery(
+        listOf(UserQueryKeys.USER_TYPES, "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled = enabled,
+    ) { it.users.listTypes(limit, offset, fetcher) }
+
+@Composable
 fun rememberDeleteUser(fetcher: ThunderIDFetcher? = null): ResourceMutationState<String, Unit> =
     rememberResourceMutation({ listOf(listOf(UserQueryKeys.USERS)) }) { client, id ->
         client.users.delete(id, fetcher)
@@ -152,11 +184,14 @@ fun rememberDeleteUser(fetcher: ThunderIDFetcher? = null): ResourceMutationState
 fun rememberGetAgents(
     limit: Int? = null,
     offset: Int? = null,
+    filter: String? = null,
     fetcher: ThunderIDFetcher? = null,
+    enabled: Boolean = true,
 ): ResourceQueryState<AgentListResponse> =
-    rememberResourceQuery(listOf(AgentQueryKeys.AGENTS, "limit=${limit ?: ""}", "offset=${offset ?: ""}")) {
-        it.agents.list(limit, offset, fetcher)
-    }
+    rememberResourceQuery(
+        listOf(AgentQueryKeys.AGENTS, "filter=${filter.orEmpty()}", "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled,
+    ) { it.agents.list(limit, offset, filter, fetcher) }
 
 @Composable
 fun rememberGetAgent(
@@ -184,3 +219,39 @@ fun rememberDeleteAgent(fetcher: ThunderIDFetcher? = null): ResourceMutationStat
     rememberResourceMutation({ listOf(listOf(AgentQueryKeys.AGENTS)) }) { client, id ->
         client.agents.delete(id, fetcher)
     }
+
+@Composable
+fun rememberGetAgentGroups(
+    id: String?,
+    limit: Int? = null,
+    offset: Int? = null,
+    fetcher: ThunderIDFetcher? = null,
+): ResourceQueryState<MembershipGroupListResponse> =
+    rememberResourceQuery(
+        listOf(GroupQueryKeys.MEMBERSHIPS, "agent", id.orEmpty(), "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled = id != null,
+    ) { it.agents.listGroups(id!!, limit, offset, fetcher) }
+
+@Composable
+fun rememberGetAgentRoles(
+    id: String?,
+    limit: Int? = null,
+    offset: Int? = null,
+    fetcher: ThunderIDFetcher? = null,
+): ResourceQueryState<AgentRoleListResponse> =
+    rememberResourceQuery(
+        listOf(RoleQueryKeys.ROLE_ASSIGNMENTS, "agent", id.orEmpty(), "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled = id != null,
+    ) { it.agents.listRoles(id!!, limit, offset, fetcher) }
+
+@Composable
+fun rememberGetAgentTypes(
+    limit: Int? = null,
+    offset: Int? = null,
+    fetcher: ThunderIDFetcher? = null,
+    enabled: Boolean = true,
+): ResourceQueryState<AgentTypeListResponse> =
+    rememberResourceQuery(
+        listOf(AgentQueryKeys.AGENT_TYPES, "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        enabled = enabled,
+    ) { it.agents.listTypes(limit, offset, fetcher) }

@@ -50,15 +50,33 @@ internal class ManagementTransport(
         httpClient.send<Unit>("DELETE", url(id, emptyMap()), null, fetcher ?: this.fetcher)
     }
 
+    /** Reads a sub-resource of one resource, such as `{collection}/{id}/members`. */
+    suspend inline fun <reified T : Any> getSubResource(
+        id: String,
+        subPath: String,
+        query: Map<String, String?>,
+        fetcher: ThunderIDFetcher?,
+    ): T = httpClient.send("GET", url(id, query, subPath), null, fetcher ?: this.fetcher)
+
+    /** Posts to a sub-resource of one resource, such as `{collection}/{id}/members/add`. */
+    suspend inline fun <reified T : Any> postSubResource(
+        id: String,
+        subPath: String,
+        body: Any,
+        fetcher: ThunderIDFetcher?,
+    ): T = httpClient.send("POST", url(id, emptyMap(), subPath), Gson().toJson(body), fetcher ?: this.fetcher)
+
     @PublishedApi
     internal fun url(
         id: String?,
         query: Map<String, String?>,
+        subPath: String? = null,
     ): String {
         if (id != null && id.isBlank()) {
             throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "A resource identifier is required")
         }
-        val resourceUrl = if (id == null) collectionUrl else "$collectionUrl/${encode(id)}"
+        val itemUrl = if (id == null) collectionUrl else "$collectionUrl/${encode(id)}"
+        val resourceUrl = if (id != null && subPath != null) "$itemUrl/$subPath" else itemUrl
         val queryString =
             query.entries
                 .filter { it.value != null }

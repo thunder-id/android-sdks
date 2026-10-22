@@ -111,7 +111,7 @@ fun ExplorerScreen() {
                 }
             }
         }
-        Preview(dark = dark, taps = taps) {
+        Preview(dark = dark, taps = taps, tall = isAdminStory(spec.id) || isCustomRenderStory(spec.id)) {
             StoryPreview(spec.id, storyId, props) { taps++ }
         }
         Column(
@@ -243,6 +243,7 @@ private fun StoryChip(
 private fun Preview(
     dark: Boolean,
     taps: Int,
+    tall: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val background = if (dark) Color(0xFF071022) else Color(0xFFEEF1F6)
@@ -252,7 +253,7 @@ private fun Preview(
             Modifier
                 .padding(horizontal = 16.dp)
                 .fillMaxWidth()
-                .height(250.dp)
+                .height(if (tall) 340.dp else 250.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(background)
                 .drawBehind {
@@ -389,6 +390,14 @@ private fun StoryPreview(
             } else {
                 SignedIn(fallback = { Text(fallback, color = textColor) }) { Text("Signed-in content", color = textColor) }
             }
+        }
+
+        in AdminComponentSpecs.map { it.id } -> {
+            AdminStoryPreview(componentId, storyId, props, onTap)
+        }
+
+        in CustomRenderSpecs.map { it.id } -> {
+            CustomRenderPreview(componentId, storyId, props, onTap)
         }
 
         "signin" -> {

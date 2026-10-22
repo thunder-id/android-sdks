@@ -42,10 +42,18 @@ data class ThunderIDHttpConfig(
 /**
  * Collection URL overrides for the management operations, for a management API that runs on a different
  * host from `baseUrl`. A `null` entry falls back to `{baseUrl}/{collection}`. A single resource is addressed
- * as `{collection}/{id}`.
+ * as `{collection}/{id}`, and its sub-resources as `{collection}/{id}/{sub-resource}`, for example
+ * `{groups}/{id}/members` or `{roles}/{id}/assignments`.
+ *
+ * @property agentTypes Defaults to `{baseUrl}/agent-types`.
+ * @property userTypes Defaults to `{baseUrl}/user-types`.
  */
 data class ThunderIDEndpoints(
     val agents: String? = null,
     val applications: String? = null,
     val users: String? = null,
+    val groups: String? = null,
+    val roles: String? = null,
+    val agentTypes: String? = null,
+    val userTypes: String? = null,
 )

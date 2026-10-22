@@ -43,6 +43,17 @@ android {
         )
         buildConfigField("String", "THUNDERID_SCOPES", "\"${config("THUNDERID_SCOPES", "openid profile email")}\"")
 
+        // Optional management endpoint overrides. Blank keys fall back to {THUNDERID_BASE_URL}/{collection}.
+        listOf(
+            "THUNDERID_ENDPOINT_APPLICATIONS",
+            "THUNDERID_ENDPOINT_USERS",
+            "THUNDERID_ENDPOINT_USER_TYPES",
+            "THUNDERID_ENDPOINT_AGENTS",
+            "THUNDERID_ENDPOINT_AGENT_TYPES",
+            "THUNDERID_ENDPOINT_GROUPS",
+            "THUNDERID_ENDPOINT_ROLES",
+        ).forEach { key -> buildConfigField("String", key, "\"${config(key)}\"") }
+
         // The redirect URI's scheme is registered on MainActivity, so the callback lands back here.
         manifestPlaceholders["redirectScheme"] = afterSignInUrl.substringBefore("://")
     }

@@ -149,10 +149,12 @@ object ApplicationQueryKeys {
 object UserQueryKeys {
     const val USER = "user"
     const val USERS = "users"
+    const val USER_TYPES = "user-types"
 }
 
 /** Cache keys for agent resources. */
 object AgentQueryKeys {
     const val AGENT = "agent"
     const val AGENTS = "agents"
+    const val AGENT_TYPES = "agent-types"
 }

@@ -17,3 +17,13 @@ THUNDERID_AFTER_SIGN_OUT_URL=dev.thunderid.playground://signed-out
 
 # Space separated OAuth2 scopes.
 THUNDERID_SCOPES=openid profile email
+
+# Optional: per-collection management endpoint overrides (ThunderIDConfig.endpoints). Each is a full
+# collection URL. Leave them blank to use {THUNDERID_BASE_URL}/{collection}.
+THUNDERID_ENDPOINT_APPLICATIONS=
+THUNDERID_ENDPOINT_USERS=
+THUNDERID_ENDPOINT_USER_TYPES=
+THUNDERID_ENDPOINT_AGENTS=
+THUNDERID_ENDPOINT_AGENT_TYPES=
+THUNDERID_ENDPOINT_GROUPS=
+THUNDERID_ENDPOINT_ROLES=

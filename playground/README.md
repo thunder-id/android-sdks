@@ -47,6 +47,7 @@ next time you run it. It is a development tool, not a sample: for a minimal inte
    | `THUNDERID_AFTER_SIGN_IN_URL` | Sign-in redirect URI. Its scheme is registered on the app, so changing it here is enough. |
    | `THUNDERID_AFTER_SIGN_OUT_URL` | Sign-out redirect URI. |
    | `THUNDERID_SCOPES` | Space separated scopes. Defaults to `openid profile email`. |
+   | `THUNDERID_BACKEND_URL` | Optional. Base URL of a backend that signs the app in and keeps the tokens (`endpoints.backend`). Leave empty to sign in directly. |
 
    `config.properties` is gitignored. Every key can also come from an environment variable of the
    same name.

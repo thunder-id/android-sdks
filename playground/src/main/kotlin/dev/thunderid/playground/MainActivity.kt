@@ -11,8 +11,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.remember
 import dev.thunderid.android.EncryptedStorageAdapter
+import dev.thunderid.android.ThunderIDBackendEndpoints
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDConfig
+import dev.thunderid.android.ThunderIDEndpoints
 import dev.thunderid.android.auth.FederatedAuthSession
 import dev.thunderid.compose.ThunderIDProvider
 import dev.thunderid.compose.i18n.ThunderIDI18n
@@ -25,6 +27,7 @@ object PlaygroundSettings {
     val afterSignInUrl: String = BuildConfig.THUNDERID_AFTER_SIGN_IN_URL
     val afterSignOutUrl: String = BuildConfig.THUNDERID_AFTER_SIGN_OUT_URL
     val scopes: List<String> = BuildConfig.THUNDERID_SCOPES.split(" ").filter { it.isNotBlank() }
+    val backendUrl: String = BuildConfig.THUNDERID_BACKEND_URL
 
     val hostLabel: String
         get() = baseUrl.substringAfter("://").ifBlank { "no server configured" }
@@ -64,6 +67,13 @@ class MainActivity : ComponentActivity() {
                 afterSignInUrl = PlaygroundSettings.afterSignInUrl,
                 afterSignOutUrl = PlaygroundSettings.afterSignOutUrl,
                 scopes = PlaygroundSettings.scopes,
+                endpoints =
+                    ThunderIDEndpoints(
+                        backend =
+                            PlaygroundSettings.backendUrl
+                                .takeIf { it.isNotBlank() }
+                                ?.let { ThunderIDBackendEndpoints(baseUrl = it) },
+                    ),
                 storage = storage,
                 allowInsecureConnections = BuildConfig.DEBUG,
             )

@@ -43,9 +43,14 @@ data class ThunderIDHttpConfig(
  * Collection URL overrides for the management operations, for a management API that runs on a different
  * host from `baseUrl`. A `null` entry falls back to `{baseUrl}/{collection}`. A single resource is addressed
  * as `{collection}/{id}`.
+ *
+ * @property backend The app backend's auth endpoints. Setting them hands sign-in to a backend the
+ * application owns, which keeps the tokens. It names the application's own backend, not a ThunderID
+ * endpoint. See [ThunderIDBackendEndpoints].
  */
 data class ThunderIDEndpoints(
     val agents: String? = null,
     val applications: String? = null,
     val users: String? = null,
+    val backend: ThunderIDBackendEndpoints? = null,
 )

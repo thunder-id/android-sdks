@@ -37,6 +37,8 @@ data class ThunderIDConfig(
     val endpoints: ThunderIDEndpoints = ThunderIDEndpoints(),
     // HTTP options.
     val http: ThunderIDHttpConfig = ThunderIDHttpConfig(),
+    // Session - behaviour around the session. See [ThunderIDSessionConfig].
+    val session: ThunderIDSessionConfig = ThunderIDSessionConfig(),
     // Storage & Platform
     val storage: StorageAdapter? = null,
     val instanceId: Int? = null,
@@ -53,6 +55,19 @@ data class ThunderIDConfig(
         const val DEFAULT_VENDOR: String = "thunderid"
     }
 }
+
+/**
+ * Session options.
+ *
+ * @property checkInterval How often [ThunderIDClient.watchSession] asks the app's backend whether the
+ * session is still live, in seconds. Only applies when sign-in runs on a backend
+ * ([ThunderIDEndpoints.backend]): the backend's check endpoint reports liveness without refreshing the
+ * session or counting as activity, so polling it does not keep an idle session alive. `0` leaves only
+ * the check that runs when the app comes back to the foreground.
+ */
+data class ThunderIDSessionConfig(
+    val checkInterval: Int = 0,
+)
 
 data class TokenValidationConfig(
     val validate: Boolean = true,

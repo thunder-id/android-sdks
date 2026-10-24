@@ -20,6 +20,7 @@ import dev.thunderid.android.EmbeddedFlowResponse
 import dev.thunderid.android.EmbeddedSignInPayload
 import dev.thunderid.android.FlowComponent
 import dev.thunderid.android.FlowStatus
+import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.auth.FederatedAuthSession
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.i18n.DefaultStrings
@@ -59,6 +60,7 @@ val CheckDefs =
         CheckDef("biometric", "Authentication", "Biometric unlock", "BiometricPrompt"),
         CheckDef("signout", "Authentication", "Sign out", "client.signOut()", interactive = true),
         CheckDef("deeplink", "Authentication", "Redirect callback", "afterSignInUrl · intent filter"),
+        CheckDef("backend", "Authentication", "Sign in on a backend", "endpoints.backend · httpRequest()"),
         CheckDef("refresh", "Session", "Token refresh", "getAccessToken() · auto refresh"),
         CheckDef("storage", "Session", "Secure token storage", "EncryptedStorageAdapter"),
         CheckDef("user", "Session", "User info", "client.getUser()"),
@@ -186,6 +188,7 @@ class ChecksController(
             "biometric" -> biometric()
             "signout" -> signOut(state, interactive)
             "deeplink" -> redirectCallback()
+            "backend" -> backendSession(state)
             "refresh" -> tokenRefresh(state)
             "storage" -> secureStorage()
             "user" -> userInfo(state)
@@ -199,7 +202,9 @@ class ChecksController(
         state: ThunderIDState,
         interactive: Boolean,
     ): CheckResult {
-        if (PlaygroundSettings.clientId.isBlank()) return fail("THUNDERID_CLIENT_ID is not set in config.properties")
+        if (PlaygroundSettings.clientId.isBlank() && !state.client.isBackendMode()) {
+            return fail("THUNDERID_CLIENT_ID is not set in config.properties")
+        }
         val provider =
             context.packageManager
                 .queryIntentServices(Intent("android.support.customtabs.action.CustomTabsService"), 0)
@@ -292,6 +297,27 @@ class ChecksController(
         } else {
             EventLog.ok("signOut:completed", after, source = "sdk")
             pass("Tokens cleared and revoked; afterSignOutUrl=$after")
+        }
+    }
+
+    private suspend fun backendSession(state: ThunderIDState): CheckResult {
+        if (!state.client.isBackendMode()) {
+            return unavailable("Set THUNDERID_BACKEND_URL in config.properties to sign in on a backend.")
+        }
+        if (!state.client.checkSession()) return idle("No backend session. Sign in through the system browser first.")
+        val request =
+            ThunderIDHttpRequest(
+                method = "GET",
+                url = "${PlaygroundSettings.baseUrl}/users/me",
+                headers = mapOf("Accept" to "application/json"),
+                body = null,
+            )
+        val response = state.client.httpRequest(request)
+        EventLog.info("backend:proxy", "GET /users/me -> ${response.statusCode}", source = "sdk")
+        return if (response.statusCode in 200..299) {
+            pass("Session live; /users/me answered ${response.statusCode} through the proxy")
+        } else {
+            fail("The proxy answered ${response.statusCode}")
         }
     }
 

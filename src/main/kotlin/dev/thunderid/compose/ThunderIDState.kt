@@ -64,6 +64,7 @@ class ThunderIDState(
         try {
             fetchUserProfileEnabled = config.fetchUserProfile
             client.initialize(config)
+            if (client.isBackendMode()) clearUserWhenSessionEnds()
             val signedIn = runCatching { client.isSignedIn() }.getOrDefault(false)
             user = if (signedIn) runCatching { client.getUser() }.getOrNull() else null
             if (signedIn && fetchUserProfileEnabled) launchUserProfileSync()
@@ -117,6 +118,16 @@ class ThunderIDState(
         scope.launch {
             val profile = runCatching { client.getUserProfile() }.getOrNull() ?: return@launch
             mergeUserProfile(profile)
+        }
+    }
+
+    // A backend session can end elsewhere: another app signs the user out, or it times out.
+    private fun clearUserWhenSessionEnds() {
+        scope.launch {
+            client.sessionEnded.collect {
+                user = null
+                userSchema = null
+            }
         }
     }
 

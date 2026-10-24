@@ -42,6 +42,7 @@ android {
             "\"${config("THUNDERID_AFTER_SIGN_OUT_URL", "dev.thunderid.playground://signed-out")}\"",
         )
         buildConfigField("String", "THUNDERID_SCOPES", "\"${config("THUNDERID_SCOPES", "openid profile email")}\"")
+        buildConfigField("String", "THUNDERID_BACKEND_URL", "\"${config("THUNDERID_BACKEND_URL")}\"")
 
         // The redirect URI's scheme is registered on MainActivity, so the callback lands back here.
         manifestPlaceholders["redirectScheme"] = afterSignInUrl.substringBefore("://")

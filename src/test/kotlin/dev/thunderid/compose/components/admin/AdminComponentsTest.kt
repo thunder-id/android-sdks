@@ -59,7 +59,7 @@ class AdminComponentsTest {
     @Test
     fun `ships every admin string the components use`() {
         val keys = DefaultStrings.all.keys.filter { it.startsWith("admin.") }
-        assertEquals(160, keys.size)
+        assertEquals(172, keys.size)
         listOf("user", "group", "agent", "app").forEach {
             assertTrue(DefaultStrings.all.containsKey("admin.common.identity_types.$it"))
         }

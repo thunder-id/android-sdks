@@ -29,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.thunderid.android.management.AccessStatus
+import dev.thunderid.android.management.AccessStatusValue
+import dev.thunderid.android.management.AccountLifecycleAction
 import dev.thunderid.android.management.ManagedUser
 import dev.thunderid.android.management.resolveManagedIdentityName
 import dev.thunderid.compose.components.admin.AdminListState
@@ -114,9 +117,10 @@ val CustomRenderSpecs: List<ComponentSpec> =
             code = { story, props ->
                 val head =
                     if (story == "live") {
-                        "UserDetails(userId = ${quote(props.text("userId"))}, deletable = true)"
+                        "UserDetails(userId = ${quote(props.text("userId"))}, deletable = true, lifecycleActions = true)"
                     } else {
-                        "BaseUserDetails(user = user, groups = groups, onDelete = {})"
+                        "BaseUserDetails(user = user, groups = groups, onDelete = {}, lifecycleActions = actions, " +
+                            "onLifecycleAction = { action, note -> })"
                     }
                 """
                 |$head { details ->
@@ -124,6 +128,10 @@ val CustomRenderSpecs: List<ComponentSpec> =
                 |        Text(details.displayName, style = MaterialTheme.typography.titleLarge)
                 |        details.attributes.forEach { (name, value) -> Text("${'$'}name: ${'$'}value") }
                 |        details.onDelete?.let { delete -> TextButton(onClick = delete) { Text("Delete") } }
+                |        details.onLifecycleAction?.let { run ->
+                |            // Confirm a suspend or unsuspend yourself: a custom render replaces the built-in dialog.
+                |            details.lifecycleActions.forEach { action -> TextButton(onClick = { run(action, null) }) { Text(action.value) } }
+                |        }
                 |    }
                 |}
                 """.trimMargin()
@@ -233,13 +241,26 @@ fun CustomRenderPreview(
             if (live && userId.isBlank()) {
                 Text("Set userId to an ID from your server.", color = MaterialTheme.colorScheme.onBackground)
             } else if (live) {
-                UserDetails(userId = userId, modifier = modifier, deletable = true, onDeleted = onTap) { UserCard(it) }
+                UserDetails(userId = userId, modifier = modifier, deletable = true, lifecycleActions = true, onDeleted = onTap) {
+                    UserCard(it)
+                }
             } else {
+                var status by remember { mutableStateOf(AccessStatusValue.LOCKED) }
                 BaseUserDetails(
-                    user = AdminSamples.users.first(),
+                    user = AdminSamples.users.first().copy(status = AccessStatus(status)),
                     modifier = modifier,
                     groups = AdminSamples.userGroups,
                     onDelete = onTap,
+                    lifecycleActions =
+                        if (status == AccessStatusValue.LOCKED) {
+                            listOf(AccountLifecycleAction.UNLOCK, AccountLifecycleAction.SUSPEND)
+                        } else {
+                            listOf(AccountLifecycleAction.SUSPEND)
+                        },
+                    onLifecycleAction = { action, _ ->
+                        status = if (action == AccountLifecycleAction.UNLOCK) AccessStatusValue.ACTIVE else AccessStatusValue.SUSPENDED
+                        onTap()
+                    },
                 ) { UserCard(it) }
             }
         }
@@ -328,10 +349,44 @@ private fun UserCard(details: UserDetailsState) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 details.groups.forEach { group -> AssistChip(onClick = {}, label = { Text(group.name) }) }
             }
+            val status = details.user?.status?.value
+            status?.let { Text("Status: $it", fontSize = 14.sp) }
+            details.onLifecycleAction?.let { run -> LifecycleRow(details.lifecycleActions, details.isRunningLifecycleAction, run) }
             details.onDelete?.let { delete ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = delete) { Text("Delete user", color = MaterialTheme.colorScheme.error) }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The lifecycle actions a custom render was handed. Suspending and unsuspending ask for confirmation here too,
+ * since a custom render takes over the built-in one; unlocking runs straight away.
+ */
+@Composable
+private fun LifecycleRow(
+    actions: List<AccountLifecycleAction>,
+    isRunning: Boolean,
+    run: (AccountLifecycleAction, String?) -> Unit,
+) {
+    var confirming by remember { mutableStateOf<AccountLifecycleAction?>(null) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        val pending = confirming
+        if (pending != null) {
+            Text("${pending.value.replaceFirstChar { it.uppercase() }}?", fontSize = 14.sp)
+            TextButton(onClick = { confirming = null }) { Text("Cancel") }
+            Button(onClick = {
+                confirming = null
+                run(pending, null)
+            }) { Text("Confirm") }
+        } else {
+            actions.forEach { action ->
+                TextButton(
+                    onClick = { if (action == AccountLifecycleAction.UNLOCK) run(action, null) else confirming = action },
+                    enabled = !isRunning,
+                ) { Text(action.value.replaceFirstChar { it.uppercase() }) }
             }
         }
     }

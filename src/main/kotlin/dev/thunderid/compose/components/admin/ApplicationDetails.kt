@@ -15,11 +15,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import dev.thunderid.android.management.AccountLifecycleAction
+import dev.thunderid.android.management.AccountLifecycleSubjectKind
 import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.Application
+import dev.thunderid.android.management.ApplicationQueryKeys
 import dev.thunderid.android.management.ApplicationRequest
 import dev.thunderid.android.management.OAuth2Config
 import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.management.rememberAccountLifecycle
 import dev.thunderid.compose.management.rememberDeleteApplication
 import dev.thunderid.compose.management.rememberGetApplication
 import dev.thunderid.compose.management.rememberRegenerateClientSecret
@@ -50,6 +54,10 @@ data class ApplicationEdit(
  * @property onUpdate Saves the edits. `null` when editing is not allowed, including for read-only applications.
  * @property onRegenerateSecret Regenerates the client secret. `null` when it is not allowed, for read-only
  *   applications, and for applications without a confidential OAuth client. Ask for confirmation before calling it.
+ * @property lifecycleActions The account lifecycle actions offered for the application (suspend, unsuspend).
+ *   Empty when none is allowed.
+ * @property onLifecycleAction Runs an account lifecycle action. `null` when none is allowed. Ask for
+ *   confirmation before calling it.
  */
 data class ApplicationDetailsState(
     val application: Application?,
@@ -64,6 +72,9 @@ data class ApplicationDetailsState(
     val onDelete: (() -> Unit)?,
     val onUpdate: ((ApplicationEdit) -> Unit)?,
     val onRegenerateSecret: (() -> Unit)?,
+    val lifecycleActions: List<AccountLifecycleAction> = emptyList(),
+    val isRunningLifecycleAction: Boolean = false,
+    val onLifecycleAction: AccountLifecycleHandler? = null,
 )
 
 /** The OAuth client of [application], if it has one. */
@@ -132,9 +143,15 @@ internal fun applyApplicationEdit(
  *
  * Edit, delete and regenerate secret are shown only when [onUpdate], [onDelete] and [onRegenerateSecret] are
  * set, and never for a read-only application. Delete and regenerate ask for confirmation first. A regenerated
- * secret passed as [clientSecret] is shown once, until [onSecretDismiss] is called.
+ * secret passed as [clientSecret] is shown once, until [onSecretDismiss] is called. The application's access
+ * status is shown as a translated label.
  *
  * @param error A translated message to show.
+ * @param lifecycleActions The account lifecycle actions to offer (suspend, unsuspend; applications are never
+ *   locked), shown only with [onLifecycleAction]. They change only runtime state, so they apply to read-only
+ *   applications too.
+ * @param onLifecycleAction Runs an account lifecycle action. Suspending and unsuspending ask for confirmation
+ *   first.
  * @param actions Controls rendered next to the application's name.
  * @param content Renders custom UI in place of the default view, from the application, the loading and error
  *   state, the issued secret, and the actions allowed.
@@ -153,6 +170,9 @@ fun BaseApplicationDetails(
     onDelete: (() -> Unit)? = null,
     onUpdate: ((ApplicationEdit) -> Unit)? = null,
     onRegenerateSecret: (() -> Unit)? = null,
+    lifecycleActions: List<AccountLifecycleAction> = emptyList(),
+    isRunningLifecycleAction: Boolean = false,
+    onLifecycleAction: AccountLifecycleHandler? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     content: (@Composable (ApplicationDetailsState) -> Unit)? = null,
 ) {
@@ -180,6 +200,9 @@ fun BaseApplicationDetails(
                     onDelete = allowedDelete,
                     onUpdate = allowedUpdate,
                     onRegenerateSecret = allowedRegenerate,
+                    lifecycleActions = offeredLifecycleActions(lifecycleActions, onLifecycleAction, application != null),
+                    isRunningLifecycleAction = isRunningLifecycleAction,
+                    onLifecycleAction = onLifecycleAction.takeIf { application != null },
                 ),
             )
         }
@@ -200,6 +223,15 @@ fun BaseApplicationDetails(
         description = application.description,
         actions = {
             actions?.invoke(this)
+            if (onLifecycleAction != null) {
+                AdminAccountLifecycleButtons(
+                    block = "application-details",
+                    actions = lifecycleActions,
+                    name = application.name,
+                    onAction = onLifecycleAction,
+                    isRunning = isRunningLifecycleAction,
+                )
+            }
             if (allowedRegenerate != null) {
                 AdminConfirmButton(
                     block = "application-details",
@@ -317,6 +349,9 @@ fun BaseApplicationDetails(
                     AdminDetailItem(i18n.resolve("admin.applications.fields.url"), application.url ?: none),
                     AdminDetailItem(i18n.resolve("admin.applications.fields.logo_url"), application.logoUrl ?: none),
                     application.ouId?.let { AdminDetailItem(i18n.resolve("admin.common.columns.organization_unit"), it) },
+                    accessStatusLabel(i18n, application.status?.value)?.let {
+                        AdminDetailItem(i18n.resolve("admin.common.columns.status"), it)
+                    },
                 ),
             )
         }
@@ -362,6 +397,10 @@ fun BaseApplicationDetails(
  *   once. Off by default.
  * @param administrationMode How delete and secret regeneration run: through the server's administration flow
  *   when one is configured, or by calling the API directly (the default).
+ * @param lifecycleActions Lets the application be suspended and unsuspended from this view. Each action runs
+ *   through its administration flow and is offered only when the server configures that flow and the
+ *   application's status allows it. Reading the configured flows needs a token that may read the server
+ *   configuration, and happens only while this is on. Off by default.
  * @param onDeleted Called once the application is deleted, for example to navigate away.
  * @param content Renders custom UI in place of the default view. See [BaseApplicationDetails].
  */
@@ -373,6 +412,7 @@ fun ApplicationDetails(
     editable: Boolean = false,
     secretRegenerable: Boolean = false,
     administrationMode: AdministrationMode = AdministrationMode.NATIVE,
+    lifecycleActions: Boolean = false,
     onDeleted: (() -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     content: (@Composable (ApplicationDetailsState) -> Unit)? = null,
@@ -385,6 +425,15 @@ fun ApplicationDetails(
     val regeneration = rememberRegenerateClientSecret(administrationMode)
     var secret by remember(applicationId) { mutableStateOf<String?>(null) }
     val loaded = application.data
+    val lifecycle =
+        rememberAccountLifecycle(
+            kind = AccountLifecycleSubjectKind.APPLICATION,
+            subject = applicationId,
+            status = loaded?.status?.value,
+            enabled = lifecycleActions,
+            invalidatedKeys =
+                listOf(listOf(ApplicationQueryKeys.APPLICATION, applicationId), listOf(ApplicationQueryKeys.APPLICATIONS)),
+        )
     BaseApplicationDetails(
         application = loaded,
         modifier = modifier,
@@ -392,7 +441,9 @@ fun ApplicationDetails(
             toManagementErrorMessage(i18n, application.error, "admin.applications.details.error")
                 ?: toManagementErrorMessage(i18n, deletion.error, "admin.applications.details.delete.error")
                 ?: toManagementErrorMessage(i18n, update.error, "admin.applications.details.edit.error")
-                ?: toManagementErrorMessage(i18n, regeneration.error, "admin.applications.details.secret.error"),
+                ?: toManagementErrorMessage(i18n, regeneration.error, "admin.applications.details.secret.error")
+                ?: toManagementErrorMessage(i18n, lifecycle.error, "admin.common.lifecycle.error")
+                ?: toManagementErrorMessage(i18n, lifecycle.loadError, "admin.common.lifecycle.load_error"),
         isLoading = application.isLoading,
         isDeleting = deletion.isLoading,
         isUpdating = update.isLoading,
@@ -425,6 +476,9 @@ fun ApplicationDetails(
             } else {
                 null
             },
+        lifecycleActions = lifecycle.actions,
+        isRunningLifecycleAction = lifecycle.isRunning,
+        onLifecycleAction = if (lifecycleActions) lifecycle.run else null,
         actions = actions,
         content = content,
     )

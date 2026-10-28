@@ -3,7 +3,9 @@
 
 package dev.thunderid.compose.components.admin
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.OutlinedButton
@@ -15,13 +17,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import dev.thunderid.android.management.AccountLifecycleAction
+import dev.thunderid.android.management.AccountLifecycleSubjectKind
+import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.ManagedUser
 import dev.thunderid.android.management.MembershipGroup
 import dev.thunderid.android.management.UpdateManagedUserRequest
+import dev.thunderid.android.management.UserQueryKeys
 import dev.thunderid.android.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.management.rememberAccountLifecycle
 import dev.thunderid.compose.management.rememberDeleteUser
 import dev.thunderid.compose.management.rememberGetUser
 import dev.thunderid.compose.management.rememberGetUserGroups
@@ -32,14 +41,18 @@ import kotlinx.coroutines.launch
  * Presents one user: its attributes and the groups it belongs to. Holds no data of its own.
  *
  * Delete and edit are shown only when [onDelete] and [onUpdate] are set, and never for a read-only user.
- * Delete asks for confirmation first.
+ * Delete asks for confirmation first. The user's access status is shown as a translated label.
  *
  * @param error A translated message to show.
  * @param hiddenAttributes Attributes never shown or edited.
  * @param onUpdate Receives every attribute of the user, with the edited text attributes replaced.
+ * @param lifecycleActions The account lifecycle actions to offer (suspend, unsuspend, unlock), shown only with
+ *   [onLifecycleAction]. They change only runtime state, so they apply to read-only users too.
+ * @param onLifecycleAction Runs an account lifecycle action. Suspending and unsuspending ask for confirmation
+ *   first, and a suspension takes an optional operator note.
  * @param actions Controls rendered next to the user's name.
  * @param content Renders custom UI in place of the default view, from the user, their visible attributes and
- *   groups, the loading and error state, and the delete and update actions.
+ *   groups, the loading and error state, and the delete, update and lifecycle actions.
  */
 @Composable
 fun BaseUserDetails(
@@ -53,6 +66,9 @@ fun BaseUserDetails(
     isUpdating: Boolean = false,
     onDelete: (() -> Unit)? = null,
     onUpdate: ((Map<String, Any?>) -> Unit)? = null,
+    lifecycleActions: List<AccountLifecycleAction> = emptyList(),
+    isRunningLifecycleAction: Boolean = false,
+    onLifecycleAction: AccountLifecycleHandler? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     content: (@Composable (UserDetailsState) -> Unit)? = null,
 ) {
@@ -72,6 +88,9 @@ fun BaseUserDetails(
                     isUpdating = isUpdating,
                     onDelete = onDelete.takeIf { user != null && user.isReadOnly != true },
                     onUpdate = onUpdate.takeIf { user != null && user.isReadOnly != true },
+                    lifecycleActions = offeredLifecycleActions(lifecycleActions, onLifecycleAction, user != null),
+                    isRunningLifecycleAction = isRunningLifecycleAction,
+                    onLifecycleAction = onLifecycleAction.takeIf { user != null },
                 ),
             )
         }
@@ -96,6 +115,16 @@ fun BaseUserDetails(
         description = i18n.translate("admin.users.details.subtitle", "type" to user.type),
         actions = {
             actions?.invoke(this)
+            if (onLifecycleAction != null) {
+                AdminAccountLifecycleButtons(
+                    block = "user-details",
+                    actions = lifecycleActions,
+                    name = displayName,
+                    onAction = onLifecycleAction,
+                    isRunning = isRunningLifecycleAction,
+                    collectsOperatorNote = true,
+                )
+            }
             if (onDelete != null && canChange) {
                 AdminConfirmButton(
                     block = "user-details",
@@ -108,7 +137,10 @@ fun BaseUserDetails(
         },
     ) {
         error?.let { AdminErrorBanner(it) }
-        AdminMuted(user.ouHandle ?: user.ouId)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AdminMuted(user.ouHandle ?: user.ouId)
+            AdminAccessStatus("user-details", user.status?.value)
+        }
         AdminPanel(
             title = i18n.resolve("admin.users.details.attributes"),
             actions =
@@ -172,6 +204,13 @@ fun BaseUserDetails(
  *
  * @param deletable Shows a delete action, which asks for confirmation. Off by default.
  * @param editable Lets the user's text attributes be edited in place. Off by default.
+ * @param lifecycleActions Lets the user be suspended, unsuspended and unlocked from this view. Each action runs
+ *   through its administration flow and is offered only when the server configures that flow and the user's
+ *   status allows it. Reading the configured flows needs a token that may read the server configuration, and
+ *   happens only while this is on. Off by default.
+ * @param administrationMode How the delete runs: [AdministrationMode.FLOW] runs the user deletion flow the server
+ *   configures, which revokes the user's grants and ends their sessions before the record goes. Defaults to
+ *   [AdministrationMode.NATIVE], which calls the API directly.
  * @param onDeleted Called once the user is deleted, for example to navigate away.
  * @param content Renders custom UI in place of the default view. See [BaseUserDetails].
  */
@@ -181,6 +220,8 @@ fun UserDetails(
     modifier: Modifier = Modifier,
     deletable: Boolean = false,
     editable: Boolean = false,
+    lifecycleActions: Boolean = false,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
     onDeleted: (() -> Unit)? = null,
     hiddenAttributes: List<String> = listOf("password"),
     actions: (@Composable RowScope.() -> Unit)? = null,
@@ -190,9 +231,17 @@ fun UserDetails(
     val scope = rememberCoroutineScope()
     val user = rememberGetUser(userId)
     val groups = rememberGetUserGroups(userId, limit = 100)
-    val deletion = rememberDeleteUser()
+    val deletion = rememberDeleteUser(administrationMode = administrationMode)
     val update = rememberUpdateUser()
     val loaded = user.data
+    val lifecycle =
+        rememberAccountLifecycle(
+            kind = AccountLifecycleSubjectKind.USER,
+            subject = userId,
+            status = loaded?.status?.value,
+            enabled = lifecycleActions,
+            invalidatedKeys = listOf(listOf(UserQueryKeys.USER, userId), listOf(UserQueryKeys.USERS)),
+        )
     BaseUserDetails(
         user = loaded,
         modifier = modifier,
@@ -200,7 +249,9 @@ fun UserDetails(
         error =
             toManagementErrorMessage(i18n, user.error, "admin.users.details.error")
                 ?: toManagementErrorMessage(i18n, deletion.error, "admin.users.details.delete.error")
-                ?: toManagementErrorMessage(i18n, update.error, "admin.users.details.edit.error"),
+                ?: toManagementErrorMessage(i18n, update.error, "admin.users.details.edit.error")
+                ?: toManagementErrorMessage(i18n, lifecycle.error, "admin.common.lifecycle.error")
+                ?: toManagementErrorMessage(i18n, lifecycle.loadError, "admin.common.lifecycle.load_error"),
         hiddenAttributes = hiddenAttributes,
         isLoading = user.isLoading,
         isDeleting = deletion.isLoading,
@@ -223,6 +274,9 @@ fun UserDetails(
             } else {
                 null
             },
+        lifecycleActions = lifecycle.actions,
+        isRunningLifecycleAction = lifecycle.isRunning,
+        onLifecycleAction = if (lifecycleActions) lifecycle.run else null,
         actions = actions,
         content = content,
     )

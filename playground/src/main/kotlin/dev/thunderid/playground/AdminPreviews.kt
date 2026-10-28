@@ -16,8 +16,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.thunderid.android.management.AccessStatus
+import dev.thunderid.android.management.AccessStatusValue
+import dev.thunderid.android.management.AccountLifecycleAction
+import dev.thunderid.android.management.AccountLifecycleSubjectKind
+import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.RoleAssignment
+import dev.thunderid.android.management.accountLifecycleActions
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.admin.AgentCreate
 import dev.thunderid.compose.components.admin.AgentDetails
@@ -51,6 +57,52 @@ import dev.thunderid.compose.components.admin.RolePermissions
 import dev.thunderid.compose.components.admin.UserCreate
 import dev.thunderid.compose.components.admin.UserDetails
 import dev.thunderid.compose.components.admin.UserList
+
+/** The administration mode the story's control chose. */
+private fun Map<String, Any>.administrationMode(): AdministrationMode =
+    if (text("administrationMode") == "flow") AdministrationMode.FLOW else AdministrationMode.NATIVE
+
+/** The status an identity has once [action] ran: a suspension holds it, and the others clear what held it. */
+private fun statusAfter(action: AccountLifecycleAction): String =
+    if (action == AccountLifecycleAction.SUSPEND) AccessStatusValue.SUSPENDED else AccessStatusValue.ACTIVE
+
+/**
+ * The account lifecycle state of a Base details story: the status the control chose, which a lifecycle action
+ * then changes, and the actions it allows with every flow configured.
+ */
+private class SampleLifecycle(
+    val kind: AccountLifecycleSubjectKind,
+    initialStatus: String,
+) {
+    var status by mutableStateOf(initialStatus)
+
+    val actions: List<AccountLifecycleAction>
+        get() = accountLifecycleActions(kind, status, kind.flowConfigKeys.values.associateWith { it })
+
+    fun handler(
+        enabled: Boolean,
+        id: String,
+        onTap: () -> Unit,
+    ): ((AccountLifecycleAction, String?) -> Unit)? =
+        if (enabled) {
+            { action, note ->
+                status = statusAfter(action)
+                EventLog.info("admin:${kind.value}Details:${action.value}", listOfNotNull(id, note).joinToString(" "), source = "explorer")
+                onTap()
+            }
+        } else {
+            null
+        }
+}
+
+@Composable
+private fun rememberSampleLifecycle(
+    kind: AccountLifecycleSubjectKind,
+    props: Map<String, Any>,
+): SampleLifecycle {
+    val status = props.text("status").ifBlank { AccessStatusValue.ACTIVE }
+    return remember(kind, status) { SampleLifecycle(kind, status) }
+}
 
 /** Whether [componentId] is one of the admin stories rendered by [AdminStoryPreview]. */
 fun isAdminStory(componentId: String): Boolean = AdminComponentSpecs.any { it.id == componentId }
@@ -118,7 +170,13 @@ fun AdminStoryPreview(
                 val editable = props.flag("editable")
                 if (live) {
                     IdRequired(props.resourceId("groupId", ManagementFixtures.groupId), "group") { id ->
-                        GroupMembers(groupId = id, modifier = modifier, editable = editable, title = title)
+                        GroupMembers(
+                            groupId = id,
+                            modifier = modifier,
+                            editable = editable,
+                            administrationMode = props.administrationMode(),
+                            title = title,
+                        )
                     }
                 } else {
                     val members = remember { mutableStateListOf<GroupMember>().apply { addAll(AdminSamples.members) } }
@@ -232,7 +290,13 @@ fun AdminStoryPreview(
                 val editable = props.flag("editable")
                 if (live) {
                     IdRequired(props.resourceId("roleId", ManagementFixtures.roleId), "role") { id ->
-                        RoleAssignments(roleId = id, modifier = modifier, editable = editable, title = title)
+                        RoleAssignments(
+                            roleId = id,
+                            modifier = modifier,
+                            editable = editable,
+                            administrationMode = props.administrationMode(),
+                            title = title,
+                        )
                     }
                 } else {
                     val assignments = remember { mutableStateListOf<RoleAssignment>().apply { addAll(AdminSamples.assignments) } }
@@ -333,6 +397,7 @@ fun AdminStoryPreview(
             "userDetails" -> {
                 val editable = props.flag("editable")
                 val deletable = props.flag("deletable")
+                val lifecycleActions = props.flag("lifecycleActions")
                 if (live) {
                     IdRequired(props.resourceId("userId", ManagementFixtures.userId), "user") { id ->
                         UserDetails(
@@ -340,6 +405,8 @@ fun AdminStoryPreview(
                             modifier = modifier,
                             deletable = deletable,
                             editable = editable,
+                            lifecycleActions = lifecycleActions,
+                            administrationMode = props.administrationMode(),
                             onDeleted = {
                                 EventLog.ok("admin:user:deleted", id, source = "explorer")
                                 ManagementFixtures.userId = ""
@@ -347,12 +414,16 @@ fun AdminStoryPreview(
                         )
                     }
                 } else {
+                    val lifecycle = rememberSampleLifecycle(AccountLifecycleSubjectKind.USER, props)
+                    val user = AdminSamples.users.first()
                     BaseUserDetails(
-                        user = AdminSamples.users.first(),
+                        user = user.copy(status = AccessStatus(lifecycle.status)),
                         modifier = modifier,
                         groups = AdminSamples.userGroups,
                         error = error,
                         isLoading = loading,
+                        lifecycleActions = lifecycle.actions,
+                        onLifecycleAction = lifecycle.handler(lifecycleActions, user.id, onTap),
                         onDelete =
                             if (deletable) {
                                 {
@@ -435,12 +506,14 @@ fun AdminStoryPreview(
 
             "agentDetails" -> {
                 val deletable = props.flag("deletable")
+                val lifecycleActions = props.flag("lifecycleActions")
                 if (live) {
                     IdRequired(props.resourceId("agentId", ManagementFixtures.agentId), "agent") { id ->
                         AgentDetails(
                             agentId = id,
                             modifier = modifier,
                             deletable = deletable,
+                            lifecycleActions = lifecycleActions,
                             onDeleted = {
                                 EventLog.ok("admin:agent:deleted", id, source = "explorer")
                                 ManagementFixtures.agentId = ""
@@ -448,9 +521,12 @@ fun AdminStoryPreview(
                         )
                     }
                 } else {
+                    val lifecycle = rememberSampleLifecycle(AccountLifecycleSubjectKind.AGENT, props)
                     BaseAgentDetails(
-                        agent = AdminSamples.agent,
+                        agent = AdminSamples.agent.copy(status = AccessStatus(lifecycle.status)),
                         modifier = modifier,
+                        lifecycleActions = lifecycle.actions,
+                        onLifecycleAction = lifecycle.handler(lifecycleActions, AdminSamples.agent.id, onTap),
                         groups = AdminSamples.userGroups,
                         roles = AdminSamples.agentRoles,
                         error = error,
@@ -586,6 +662,7 @@ private fun ApplicationDetailsPreview(
     val deletable = props.flag("deletable")
     val editable = props.flag("editable")
     val regenerable = props.flag("secretRegenerable")
+    val lifecycleActions = props.flag("lifecycleActions")
     if (live) {
         IdRequired(props.resourceId("applicationId", ManagementFixtures.applicationId), "application") { id ->
             ApplicationDetails(
@@ -594,6 +671,8 @@ private fun ApplicationDetailsPreview(
                 deletable = deletable,
                 editable = editable,
                 secretRegenerable = regenerable,
+                administrationMode = props.administrationMode(),
+                lifecycleActions = lifecycleActions,
                 onDeleted = {
                     EventLog.ok("admin:application:deleted", id, source = "explorer")
                     ManagementFixtures.applicationId = ""
@@ -604,9 +683,12 @@ private fun ApplicationDetailsPreview(
     }
     var application by remember { mutableStateOf(AdminSamples.application) }
     var secret by remember { mutableStateOf<String?>(null) }
+    val lifecycle = rememberSampleLifecycle(AccountLifecycleSubjectKind.APPLICATION, props)
     BaseApplicationDetails(
-        application = application,
+        application = application.copy(status = AccessStatus(lifecycle.status)),
         modifier = modifier,
+        lifecycleActions = lifecycle.actions,
+        onLifecycleAction = lifecycle.handler(lifecycleActions, application.id, onTap),
         error = error,
         isLoading = loading,
         clientSecret = secret,

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.RoleAssigneeType
 import dev.thunderid.android.management.RoleAssignment
 import dev.thunderid.android.management.RoleAssignmentInput
@@ -152,6 +153,9 @@ fun BaseRoleAssignments(
  * Shows who a role is assigned to through the role management operations.
  *
  * @param editable Lets the role be assigned to users, groups and agents, and be unassigned. Off by default.
+ * @param administrationMode How an assignment is removed: [AdministrationMode.FLOW] runs the assignment removal
+ *   flow the server configures, which can revoke grants and end sessions first. Defaults to
+ *   [AdministrationMode.NATIVE], which calls the API directly.
  * @param filterable Shows the assignee type filter, which narrows the list on the server. On by default.
  * @param content Renders custom UI in place of the default table and picker. See [BaseRoleAssignments].
  */
@@ -160,6 +164,7 @@ fun RoleAssignments(
     roleId: String,
     modifier: Modifier = Modifier,
     editable: Boolean = false,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
     filterable: Boolean = true,
     title: String? = null,
     description: String? = null,
@@ -173,7 +178,7 @@ fun RoleAssignments(
     val groups = rememberGetGroups(limit = 100, enabled = editable)
     val agents = rememberGetAgents(limit = 100, enabled = editable)
     val assign = rememberAddRoleAssignments()
-    val unassign = rememberRemoveRoleAssignments()
+    val unassign = rememberRemoveRoleAssignments(administrationMode = administrationMode)
     BaseRoleAssignments(
         assignments = assignments.data?.assignments.orEmpty(),
         modifier = modifier,

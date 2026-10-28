@@ -176,6 +176,22 @@ class AdministrationClient internal constructor(
         return executeFlow(flowId, inputs, action, fetcher)
     }
 
+    /**
+     * Runs an account lifecycle [action] (suspend, unsuspend, unlock) on the [kind] of identity [subject],
+     * through the same flow as the matching resource operation, such as `UsersClient.suspend`. A missing flow
+     * fails with that operation's `{operation}-NotConfiguredError-001`, and an action that does not apply to
+     * [kind], such as unlocking an application, fails with `INVALID_INPUT` without a request.
+     *
+     * Use it with [accountLifecycleActions] to drive the actions of any kind of identity from one place.
+     */
+    suspend fun runAccountLifecycleAction(
+        kind: AccountLifecycleSubjectKind,
+        action: AccountLifecycleAction,
+        subject: String,
+        operatorNote: String? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): AccountLifecycleResult = runAccountLifecycle(kind, action, subject, operatorNote, fetcher)
+
     companion object {
         /**
          * Page size used when walking the flow listing to find a handle. It matches the server's maximum

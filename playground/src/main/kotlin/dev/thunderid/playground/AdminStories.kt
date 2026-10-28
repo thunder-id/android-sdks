@@ -40,6 +40,31 @@ private fun MutableList<Pair<String, String>>.state(props: Map<String, Any>) {
     if (props.text("error").isNotBlank()) add("error" to quote(props.text("error")))
 }
 
+/** The administration mode control of a component whose data-changing operation accepts one. */
+private val ADMINISTRATION_MODE = Control.Choice("administrationMode", listOf("native", "flow"))
+
+/** The access status a Base details story shows, which decides the lifecycle actions it offers. */
+private val ACCESS_STATUS = Control.Choice("status", listOf("ACTIVE", "LOCKED", "SUSPENDED"))
+
+private fun MutableList<Pair<String, String>>.administrationMode(props: Map<String, Any>) {
+    if (props.text("administrationMode") == "flow") add("administrationMode" to "AdministrationMode.FLOW")
+}
+
+/** The lifecycle arguments of a details story: the opt-in on the live one, the actions and handler on a Base one. */
+private fun MutableList<Pair<String, String>>.lifecycle(
+    story: String,
+    props: Map<String, Any>,
+    kind: String,
+) {
+    if (!props.flag("lifecycleActions")) return
+    if (story == "live") {
+        add("lifecycleActions" to "true")
+    } else {
+        add("lifecycleActions" to "accountLifecycleActions(AccountLifecycleSubjectKind.$kind, status, configuredFlows)")
+        add("onLifecycleAction" to "{ action, operatorNote -> /* run it */ }")
+    }
+}
+
 private fun stateStories(extra: List<Story> = emptyList()): List<Story> =
     listOf(
         Story("live", "Live", mapOf("isLoading" to false, "error" to "")),
@@ -163,17 +188,27 @@ private fun membershipSpec(
             listOf(
                 Control.Text(idKey),
                 Control.Bool("editable"),
+                ADMINISTRATION_MODE,
                 Control.Text("title"),
                 Control.Bool("isLoading"),
                 Control.Text("error"),
             ),
-        defaults = mapOf(idKey to "", "editable" to true, "title" to "", "isLoading" to false, "error" to ""),
+        defaults =
+            mapOf(
+                idKey to "",
+                "editable" to true,
+                "administrationMode" to "native",
+                "title" to "",
+                "isLoading" to false,
+                "error" to "",
+            ),
         stories = stateStories(),
         code = { story, props ->
             val args = mutableListOf<Pair<String, String>>()
             if (story == "live") {
                 args += idKey to quote(props.resourceId(idKey, discovered()).ifBlank { "<$idKey>" })
                 if (props.flag("editable")) args += "editable" to "true"
+                args.administrationMode(props)
             } else {
                 args += rowsParam to rowsParam
                 if (props.flag("editable")) {
@@ -234,10 +269,23 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     Control.Text("userId"),
                     Control.Bool("editable"),
                     Control.Bool("deletable"),
+                    ADMINISTRATION_MODE,
+                    Control.Bool("lifecycleActions"),
+                    ACCESS_STATUS,
                     Control.Bool("isLoading"),
                     Control.Text("error"),
                 ),
-            defaults = mapOf("userId" to "", "editable" to true, "deletable" to true, "isLoading" to false, "error" to ""),
+            defaults =
+                mapOf(
+                    "userId" to "",
+                    "editable" to true,
+                    "deletable" to true,
+                    "administrationMode" to "native",
+                    "lifecycleActions" to true,
+                    "status" to "LOCKED",
+                    "isLoading" to false,
+                    "error" to "",
+                ),
             stories = stateStories(),
             code = { story, props ->
                 val args = mutableListOf<Pair<String, String>>()
@@ -248,6 +296,7 @@ val AdminComponentSpecs: List<ComponentSpec> =
                         args += "deletable" to "true"
                         args += "onDeleted" to "{ /* navigate back */ }"
                     }
+                    args.administrationMode(props)
                 } else {
                     args += "user" to "user"
                     args += "groups" to "groups"
@@ -255,6 +304,7 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     if (props.flag("deletable")) args += "onDelete" to "{ /* delete */ }"
                     args.state(props)
                 }
+                args.lifecycle(story, props, "USER")
                 call(if (story == "live") "UserDetails" else "BaseUserDetails", args)
             },
         ),
@@ -264,8 +314,24 @@ val AdminComponentSpecs: List<ComponentSpec> =
             id = "agentDetails",
             group = "Admin",
             name = "AgentDetails",
-            controls = listOf(Control.Text("agentId"), Control.Bool("deletable"), Control.Bool("isLoading"), Control.Text("error")),
-            defaults = mapOf("agentId" to "", "deletable" to true, "isLoading" to false, "error" to ""),
+            controls =
+                listOf(
+                    Control.Text("agentId"),
+                    Control.Bool("deletable"),
+                    Control.Bool("lifecycleActions"),
+                    ACCESS_STATUS,
+                    Control.Bool("isLoading"),
+                    Control.Text("error"),
+                ),
+            defaults =
+                mapOf(
+                    "agentId" to "",
+                    "deletable" to true,
+                    "lifecycleActions" to true,
+                    "status" to "SUSPENDED",
+                    "isLoading" to false,
+                    "error" to "",
+                ),
             stories = stateStories(),
             code = { story, props ->
                 val args = mutableListOf<Pair<String, String>>()
@@ -282,6 +348,7 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     if (props.flag("deletable")) args += "onDelete" to "{ /* delete */ }"
                     args.state(props)
                 }
+                args.lifecycle(story, props, "AGENT")
                 call(if (story == "live") "AgentDetails" else "BaseAgentDetails", args)
             },
         ),
@@ -297,6 +364,9 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     Control.Bool("editable"),
                     Control.Bool("deletable"),
                     Control.Bool("secretRegenerable"),
+                    ADMINISTRATION_MODE,
+                    Control.Bool("lifecycleActions"),
+                    ACCESS_STATUS,
                     Control.Bool("isLoading"),
                     Control.Text("error"),
                 ),
@@ -306,6 +376,9 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     "editable" to true,
                     "deletable" to true,
                     "secretRegenerable" to true,
+                    "administrationMode" to "native",
+                    "lifecycleActions" to true,
+                    "status" to "ACTIVE",
                     "isLoading" to false,
                     "error" to "",
                 ),
@@ -321,6 +394,7 @@ val AdminComponentSpecs: List<ComponentSpec> =
                         args += "deletable" to "true"
                         args += "onDeleted" to "{ /* navigate back */ }"
                     }
+                    args.administrationMode(props)
                 } else {
                     args += "application" to "application"
                     if (props.flag("editable")) args += "onUpdate" to "{ edit -> /* save */ }"
@@ -332,6 +406,7 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     if (props.flag("deletable")) args += "onDelete" to "{ /* delete */ }"
                     args.state(props)
                 }
+                args.lifecycle(story, props, "APPLICATION")
                 call(if (story == "live") "ApplicationDetails" else "BaseApplicationDetails", args)
             },
         ),

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.thunderid.android.ThunderIDFetcher
+import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.CreateGroupRequest
 import dev.thunderid.android.management.CreateRoleRequest
 import dev.thunderid.android.management.Group
@@ -111,10 +112,17 @@ fun rememberAddGroupMembers(fetcher: ThunderIDFetcher? = null): ResourceMutation
         client.groups.addMembers(input.groupId, input.members, fetcher)
     }
 
+/**
+ * Remembers a mutation that removes group members, through the membership removal flow when
+ * [administrationMode] is [AdministrationMode.FLOW] and one is configured.
+ */
 @Composable
-fun rememberRemoveGroupMembers(fetcher: ThunderIDFetcher? = null): ResourceMutationState<GroupMembersInput, Group> =
+fun rememberRemoveGroupMembers(
+    fetcher: ThunderIDFetcher? = null,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
+): ResourceMutationState<GroupMembersInput, Group> =
     rememberResourceMutation({ groupMembershipKeys(it.groupId) }) { client, input ->
-        client.groups.removeMembers(input.groupId, input.members, fetcher)
+        client.groups.removeMembers(input.groupId, input.members, fetcher, administrationMode)
     }
 
 // MARK: - Roles
@@ -176,10 +184,17 @@ fun rememberAddRoleAssignments(fetcher: ThunderIDFetcher? = null): ResourceMutat
         client.roles.addAssignments(input.roleId, input.assignments, fetcher)
     }
 
+/**
+ * Remembers a mutation that removes role assignments, through the assignment removal flow when
+ * [administrationMode] is [AdministrationMode.FLOW] and one is configured.
+ */
 @Composable
-fun rememberRemoveRoleAssignments(fetcher: ThunderIDFetcher? = null): ResourceMutationState<RoleAssignmentsInput, Unit> =
+fun rememberRemoveRoleAssignments(
+    fetcher: ThunderIDFetcher? = null,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
+): ResourceMutationState<RoleAssignmentsInput, Unit> =
     rememberResourceMutation({ listOf(listOf(RoleQueryKeys.ROLE_ASSIGNMENTS)) }) { client, input ->
-        client.roles.removeAssignments(input.roleId, input.assignments, fetcher)
+        client.roles.removeAssignments(input.roleId, input.assignments, fetcher, administrationMode)
     }
 
 // MARK: - Permissions

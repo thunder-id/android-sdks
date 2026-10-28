@@ -583,7 +583,8 @@ class AdministrationApiTest {
             val fetcher =
                 ServerFetcher(
                     resource =
-                        """{"id":"a-1","clientId":"client","name":"Bot","ouHandle":"default","ouId":"ou-1","type":"bot",""" +
+                        """{"id":"a-1","clientId":"client","display":"Bot","attributes":{"name":"Bot"},""" +
+                            """"ouHandle":"default","ouId":"ou-1","type":"bot",""" +
                             """"inboundAuthConfig":[{"type":"oauth2","config":{"grantTypes":["client_credentials"]}}]}""",
                 )
 
@@ -593,7 +594,8 @@ class AdministrationApiTest {
             // The display-only organization unit handle and the server-set fields stay out of the update.
             assertEquals(
                 json(
-                    """{"ouId":"ou-1","type":"bot","name":"Bot","delegated":false,"inboundAuthConfig":[{"type":"oauth2",""" +
+                    """{"ouId":"ou-1","type":"bot","attributes":{"name":"Bot"},"delegated":false,""" +
+                        """"inboundAuthConfig":[{"type":"oauth2",""" +
                         """"config":{"grantTypes":["client_credentials"],"clientSecret":"${result.clientSecret}"}}]}""",
                 ),
                 fetcher.put(),
@@ -608,7 +610,7 @@ class AdministrationApiTest {
                 val fetcher =
                     ServerFetcher(
                         resource =
-                            """{"id":"a-1","name":"Assistant","ouId":"ou-1","type":"bot",""" +
+                            """{"id":"a-1","attributes":{"name":"Assistant"},"ouId":"ou-1","type":"bot",""" +
                                 """"inboundAuthConfig":[{"type":"oauth2","config":{"grantTypes":["$grant","refresh_token"]}}]}""",
                     )
 
@@ -621,7 +623,7 @@ class AdministrationApiTest {
     @Test
     fun `refuses to regenerate the secret of an agent with no OAuth client`() =
         runTest {
-            val fetcher = ServerFetcher(resource = """{"id":"a-1","name":"Bot","ouId":"ou-1","type":"bot"}""")
+            val fetcher = ServerFetcher(resource = """{"id":"a-1","attributes":{"name":"Bot"},"ouId":"ou-1","type":"bot"}""")
 
             val error = expectError<IAMException> { client(fetcher).agents.regenerateSecret("a-1") }
 

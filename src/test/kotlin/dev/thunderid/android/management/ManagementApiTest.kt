@@ -147,12 +147,52 @@ class ManagementApiTest {
         }
 
     @Test
+    fun `agent create sends the name as an attribute`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            val client = client(recorder)
+            recorder.respond("""{"id":"ag-1","ouId":"ou","type":"default","attributes":{"name":"Calendar Agent"}}""")
+
+            val agent =
+                client.agents.create(
+                    CreateAgentRequest(ouId = "ou", type = "default", attributes = mapOf("name" to "Calendar Agent")),
+                )
+
+            @Suppress("UNCHECKED_CAST")
+            val body = Gson().fromJson(recorder.requests.single().body, Map::class.java) as Map<String, Any?>
+            assertEquals(mapOf("name" to "Calendar Agent"), body["attributes"])
+            assertTrue("name" !in body)
+            assertEquals("Calendar Agent", resolveAgentName(agent))
+        }
+
+    @Test
+    fun `agent reads take the name from display`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            val client = client(recorder)
+            recorder.respond(
+                """{"totalResults":1,"startIndex":1,"count":1,"agents":[{"id":"ag-1","ouId":"ou","type":"default",""" +
+                    """"display":"Calendar Agent","attributes":{"name":"Calendar Agent"}}]}""",
+            )
+
+            val agent =
+                client.agents
+                    .list()
+                    .agents
+                    .single()
+
+            assertEquals("Calendar Agent", agent.display)
+            assertEquals(mapOf("name" to "Calendar Agent"), agent.attributes)
+            assertEquals("Calendar Agent", resolveAgentName(agent))
+        }
+
+    @Test
     fun `update and delete target the resource`() =
         runTest {
             val recorder = RecordingFetcher()
             val client = client(recorder)
-            recorder.respond("""{"id":"ag-1","ouId":"ou","type":"default","name":"Renamed"}""")
-            client.agents.update("ag-1", UpdateAgentRequest(name = "Renamed"))
+            recorder.respond("""{"id":"ag-1","ouId":"ou","type":"default","attributes":{"name":"Renamed"}}""")
+            client.agents.update("ag-1", UpdateAgentRequest(attributes = mapOf("name" to "Renamed")))
             recorder.respond("", 204)
             client.agents.delete("ag-1")
 

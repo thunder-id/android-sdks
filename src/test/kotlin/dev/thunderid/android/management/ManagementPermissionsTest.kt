@@ -92,4 +92,23 @@ class ManagementPermissionsTest {
         assertEquals("u-1", resolveManagedIdentityName(user()))
         assertEquals("Bot", resolveManagedIdentityName(id = "ag-1", name = "Bot"))
     }
+
+    @Test
+    fun `resolves an agent name from display, the name attribute and the id`() {
+        fun agent(
+            display: String? = null,
+            attributes: Map<String, Any?>? = null,
+        ) = Agent(id = "ag-1", ouId = "ou", type = "default", display = display, attributes = attributes)
+
+        assertEquals("Calendar", resolveAgentName(agent(display = "Calendar", attributes = mapOf("name" to "Other"))))
+        assertEquals("Other", resolveAgentName(agent(display = "", attributes = mapOf("name" to "Other"))))
+        assertEquals("ag-1", resolveAgentName(agent(attributes = mapOf("name" to ""))))
+        assertEquals("ag-1", resolveAgentName(agent(attributes = mapOf("name" to 42))))
+        assertEquals("ag-1", resolveAgentName(agent()))
+        assertEquals(
+            "Triage",
+            resolveAgentName(BasicAgent(id = "ag-2", ouId = "ou", type = "default", attributes = mapOf("name" to "Triage"))),
+        )
+        assertEquals("ag-2", resolveAgentName(BasicAgent(id = "ag-2", ouId = "ou", type = "default")))
+    }
 }

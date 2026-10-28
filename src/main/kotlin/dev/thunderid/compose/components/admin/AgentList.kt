@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import dev.thunderid.android.management.BasicAgent
 import dev.thunderid.android.management.ManagementFilter
+import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.rememberGetAgents
 
@@ -88,7 +89,7 @@ fun BaseAgentList(
             block = "agent-list",
             columns =
                 listOf(
-                    AdminColumn(i18n.resolve("admin.agents.list.columns.name")) { Text(it.name) },
+                    AdminColumn(i18n.resolve("admin.agents.list.columns.name")) { Text(resolveAgentName(it)) },
                     AdminColumn(i18n.resolve("admin.agents.list.columns.type")) { Text(it.type) },
                     AdminColumn(i18n.resolve("admin.agents.list.columns.client_id")) { Text(it.clientId.orEmpty()) },
                     AdminColumn(i18n.resolve("admin.common.columns.organization_unit")) { Text(it.ouHandle ?: it.ouId) },

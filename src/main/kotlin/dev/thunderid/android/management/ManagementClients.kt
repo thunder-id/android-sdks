@@ -555,7 +555,6 @@ class AgentsClient internal constructor(
             UpdateAgentRequest(
                 ouId = current.ouId,
                 type = current.type,
-                name = current.name,
                 description = current.description,
                 logoUrl = current.logoUrl,
                 owner = current.owner,

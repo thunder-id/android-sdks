@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.semantics
 import dev.thunderid.android.management.RoleAssigneeType
 import dev.thunderid.android.management.RoleAssignment
 import dev.thunderid.android.management.RoleAssignmentInput
+import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.android.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.RoleAssignmentsInput
@@ -194,7 +195,7 @@ fun RoleAssignments(
                         agents.data
                             ?.agents
                             .orEmpty()
-                            .map { IdentityCandidate(it.id, it.name) },
+                            .map { IdentityCandidate(it.id, resolveAgentName(it)) },
                 )
             } else {
                 null

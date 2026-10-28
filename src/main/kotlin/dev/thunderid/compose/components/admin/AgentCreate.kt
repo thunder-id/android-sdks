@@ -149,7 +149,7 @@ fun AgentCreate(
                         CreateAgentRequest(
                             ouId = targetOuId,
                             type = submission.type,
-                            name = submission.name,
+                            attributes = mapOf("name" to submission.name),
                             description = submission.description,
                             owner = owner,
                         ),

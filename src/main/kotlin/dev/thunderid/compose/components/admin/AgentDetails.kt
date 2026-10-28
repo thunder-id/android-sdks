@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import dev.thunderid.android.management.Agent
 import dev.thunderid.android.management.MembershipGroup
+import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.rememberDeleteAgent
 import dev.thunderid.compose.management.rememberGetAgent
@@ -74,7 +75,7 @@ fun BaseAgentDetails(
     AdminSection(
         block = "agent-details",
         modifier = modifier,
-        title = agent.name,
+        title = resolveAgentName(agent),
         description = agent.description,
         actions = {
             actions?.invoke(this)
@@ -82,7 +83,7 @@ fun BaseAgentDetails(
                 AdminConfirmButton(
                     block = "agent-details",
                     label = i18n.resolve("admin.agents.details.delete.action"),
-                    confirmText = i18n.translate("admin.agents.details.delete.confirm", "name" to agent.name),
+                    confirmText = i18n.translate("admin.agents.details.delete.confirm", "name" to resolveAgentName(agent)),
                     onConfirm = onDelete,
                     isLoading = isDeleting,
                 )

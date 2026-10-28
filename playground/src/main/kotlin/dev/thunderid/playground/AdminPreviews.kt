@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.RoleAssignment
+import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.admin.AgentCreate
 import dev.thunderid.compose.components.admin.AgentDetails
@@ -476,7 +477,7 @@ fun AdminStoryPreview(
                         ouId = props.text("ouId").ifBlank { null },
                         onCreated = { agent ->
                             ManagementFixtures.agentId = agent.id
-                            EventLog.ok("admin:agent:created", "${agent.name} (${agent.id})", source = "explorer")
+                            EventLog.ok("admin:agent:created", "${resolveAgentName(agent)} (${agent.id})", source = "explorer")
                             onTap()
                         },
                         onCancel = onCancel,

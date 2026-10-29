@@ -58,6 +58,22 @@ internal object TaInStrings {
             "userProfile.error.save" to "மாற்றங்களைச் சேமிக்க முடியவில்லை.",
             "userProfile.validation.required" to "இந்தப் புலம் தேவை.",
             "userProfile.validation.pattern" to "இந்த மதிப்பு செல்லுபடியாகாது.",
+            "userProfile.verification.verified" to "சரிபார்க்கப்பட்டது",
+            "userProfile.verification.unverified" to "சரிபார்க்கப்படவில்லை",
+            "userProfile.verification.verify" to "சரிபார்",
+            "verifyAttribute.heading" to "{attribute} சரிபார்",
+            "verifyAttribute.subheading.generic" to "உங்களுக்கு அனுப்பப்பட்ட குறியீட்டை உள்ளிடவும்.",
+            "verifyAttribute.destination" to "{destination} க்கு அனுப்பப்பட்டது.",
+            "verifyAttribute.destination.link" to
+                "{destination} க்கு சரிபார்ப்பு இணைப்பை அனுப்பியுள்ளோம். " +
+                "அதைத் திறந்து, பின்னர் முடிந்தது என்பதைத் தேர்ந்தெடுக்கவும்.",
+            "verifyAttribute.submit" to "சரிபார்",
+            "verifyAttribute.resend" to "குறியீட்டை மீண்டும் அனுப்பு",
+            "verifyAttribute.success" to "{attribute} சரிபார்க்கப்பட்டது.",
+            "verifyAttribute.error" to "சரிபார்ப்பு தோல்வியடைந்தது. மீண்டும் முயற்சிக்கவும்.",
+            "verifyAttribute.done" to "முடிந்தது",
+            "verifyAttribute.cancel" to "ரத்து செய்",
+            "verifyAttribute.close" to "மூடு",
             "changeCredential.heading" to "{credential} மாற்றவும்",
             "changeCredential.description" to
                 "வலுவான {credentialLower} ஐத் தேர்ந்தெடுத்து, அதை மற்ற கணக்குகளுக்கு மீண்டும் பயன்படுத்த வேண்டாம்.",

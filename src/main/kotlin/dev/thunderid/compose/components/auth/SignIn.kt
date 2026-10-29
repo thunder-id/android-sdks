@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -115,6 +116,9 @@ abstract class FlowStepState internal constructor() {
     internal var flowId: String? = null
     internal var challengeToken: String? = null
     internal var onSubmit: (String) -> Unit = {}
+
+    // Set by a flow that renders `RESEND` components; sign-in and sign-up do not render them yet.
+    internal var onResend: ((String) -> Unit)? = null
     private val fieldValues = mutableStateMapOf<String, String>()
 
     fun fieldValue(name: String): String = fieldValues[name] ?: ""
@@ -448,6 +452,10 @@ internal fun FlowStepComponentView(
             ActionComponentView(component = component, state = state, i18n = i18n, modifier = modifier)
         }
 
+        component.type == "RESEND" && state.onResend != null -> {
+            ResendComponentView(component = component, state = state, i18n = i18n, modifier = modifier)
+        }
+
         component.type in CHOICE_COMPONENT_TYPES -> {
             val ref = component.ref ?: component.id
             if (ref != null) {
@@ -493,6 +501,17 @@ internal fun FlowStepComponentView(
     }
 }
 
+/**
+ * A flow component's label, resolved through the flow metadata when there is one. A label that still
+ * holds a `{{ }}` template, because nothing resolved it, is treated as missing, so the caller's fallback shows.
+ */
+internal fun flowLabel(
+    label: String?,
+    resolver: FlowTemplateResolver?,
+): String? = usableLabel(resolver?.resolve(label)) ?: usableLabel(label)
+
+private fun usableLabel(text: String?): String? = text?.takeIf { it.isNotBlank() && !it.contains("{{") }
+
 @Composable
 private fun FieldComponentView(
     component: FlowComponent,
@@ -502,8 +521,7 @@ private fun FieldComponentView(
     val ref = component.ref ?: component.id ?: return
     val resolver = state.templateResolver
     val resolvedLabel =
-        resolver?.resolve(component.label)?.takeIf { it.isNotBlank() }
-            ?: component.label?.takeIf { it.isNotBlank() }
+        flowLabel(component.label, resolver)
             ?: ref.replaceFirstChar { it.uppercase() }
     val isPassword = component.type == "PASSWORD_INPUT"
     OutlinedTextField(
@@ -588,8 +606,7 @@ private fun ActionComponentView(
     val actionId = action.id ?: action.ref ?: return
     val resolver = state.templateResolver
     val label =
-        resolver?.resolve(action.label)?.takeIf { it.isNotBlank() }
-            ?: action.label?.takeIf { it.isNotBlank() }
+        flowLabel(action.label, resolver)
             ?: i18n.resolve("${state.i18nPrefix}.submit")
     val isTrigger = action.eventType?.uppercase() == "TRIGGER"
     val identity = ((action.icon ?: "") + (action.ref ?: "") + (action.label ?: "")).lowercase()
@@ -674,6 +691,28 @@ private fun ActionComponentView(
                 Text(label)
             }
         }
+    }
+}
+
+/** A `RESEND` action: a text button that submits its own action with no inputs. */
+@Composable
+private fun ResendComponentView(
+    component: FlowComponent,
+    state: FlowStepState,
+    i18n: ThunderIDI18n,
+    modifier: Modifier = Modifier,
+) {
+    val componentKey = component.identifierKey() ?: return
+    val actionId = state.actions.firstOrNull { it.identifierKey() == componentKey }?.let { it.id ?: it.ref } ?: componentKey
+    val label =
+        flowLabel(component.label, state.templateResolver)
+            ?: i18n.resolve("${state.i18nPrefix}.resend")
+    TextButton(
+        onClick = { state.onResend?.invoke(actionId) },
+        enabled = !state.isLoading,
+        modifier = modifier.fillMaxWidth().testTag("thunderid-action-$actionId"),
+    ) {
+        Text(label)
     }
 }
 

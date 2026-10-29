@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.GroupMemberInput
 import dev.thunderid.android.management.GroupMemberType
+import dev.thunderid.android.management.ManagementFilter
 import dev.thunderid.android.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.GroupMembersInput
@@ -126,6 +127,7 @@ fun BaseGroupMembers(
  * Shows the members of a group through the group management operations.
  *
  * @param editable Lets users and agents be added to the group and members be removed. Off by default.
+ * @param ouId Organization unit the users and agents offered for adding are listed from.
  * @param content Renders custom UI in place of the default table and picker. See [BaseGroupMembers].
  */
 @Composable
@@ -135,13 +137,16 @@ fun GroupMembers(
     editable: Boolean = false,
     title: String? = null,
     description: String? = null,
+    ouId: String? = null,
     content: (@Composable (GroupMembersState) -> Unit)? = null,
 ) {
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val members = rememberGetGroupMembers(groupId, limit = 100)
-    val users = rememberGetUsers(limit = 100, enabled = editable)
-    val agents = rememberGetAgents(limit = 100, enabled = editable)
+    // A new filter is a new query key, which starts with no data, so no candidate from the previous unit is offered.
+    val filter = groupMemberCandidateFilter(ouId)
+    val users = rememberGetUsers(limit = 100, filter = filter, enabled = editable)
+    val agents = rememberGetAgents(limit = 100, filter = filter, enabled = editable)
     val add = rememberAddGroupMembers()
     val remove = rememberRemoveGroupMembers()
     BaseGroupMembers(
@@ -188,3 +193,6 @@ fun GroupMembers(
         content = content,
     )
 }
+
+/** The filter [GroupMembers] lists its candidates with, `null` to list them from every organization unit. */
+internal fun groupMemberCandidateFilter(ouId: String?): String? = ouId?.let { ManagementFilter.equality("ouId", it) }

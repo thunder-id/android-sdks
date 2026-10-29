@@ -118,7 +118,13 @@ fun AdminStoryPreview(
                 val editable = props.flag("editable")
                 if (live) {
                     IdRequired(props.resourceId("groupId", ManagementFixtures.groupId), "group") { id ->
-                        GroupMembers(groupId = id, modifier = modifier, editable = editable, title = title)
+                        GroupMembers(
+                            groupId = id,
+                            modifier = modifier,
+                            editable = editable,
+                            title = title,
+                            ouId = props.text("ouId").ifBlank { null },
+                        )
                     }
                 } else {
                     val members = remember { mutableStateListOf<GroupMember>().apply { addAll(AdminSamples.members) } }

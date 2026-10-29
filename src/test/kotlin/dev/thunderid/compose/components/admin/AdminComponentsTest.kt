@@ -138,6 +138,13 @@ class AdminComponentsTest {
     }
 
     @Test
+    fun `group members list candidates from the given organization unit`() {
+        assertEquals("ouId eq \"ou-1\"", groupMemberCandidateFilter("ou-1"))
+        assertNull(groupMemberCandidateFilter(null))
+        assertNull(groupMemberCandidateFilter(" "))
+    }
+
+    @Test
     fun `admin test tags are stable`() {
         assertEquals("thunderid-admin-user-details-delete-confirm", adminTag("user-details", "delete", "confirm"))
         assertEquals("thunderid-admin-group-list", adminTag("group-list"))

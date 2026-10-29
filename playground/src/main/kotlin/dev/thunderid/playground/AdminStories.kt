@@ -191,7 +191,16 @@ private fun membershipSpec(
 val AdminComponentSpecs: List<ComponentSpec> =
     listOf(
         listSpec("groupList", "GroupList", "groups", "selectedGroupId"),
-        membershipSpec("groupMembers", "GroupMembers", "groupId", { ManagementFixtures.groupId }, "members", "onAdd", "onRemove"),
+        membershipSpec(
+            "groupMembers",
+            "GroupMembers",
+            "groupId",
+            { ManagementFixtures.groupId },
+            "members",
+            "onAdd",
+            "onRemove",
+            listOf(Control.Text("ouId")),
+        ),
         createSpec("groupCreate", "GroupCreate", "group"),
         listSpec("roleList", "RoleList", "roles", "selectedRoleId"),
         ComponentSpec(

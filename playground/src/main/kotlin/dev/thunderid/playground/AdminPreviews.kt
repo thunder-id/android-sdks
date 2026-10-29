@@ -177,6 +177,7 @@ fun AdminStoryPreview(
                             editable = editable,
                             administrationMode = props.administrationMode(),
                             title = title,
+                            ouId = props.text("ouId").ifBlank { null },
                         )
                     }
                 } else {

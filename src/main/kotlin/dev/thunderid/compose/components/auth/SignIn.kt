@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -112,6 +113,9 @@ abstract class FlowStepState internal constructor() {
     internal var flowId: String? = null
     internal var challengeToken: String? = null
     internal var onSubmit: (String) -> Unit = {}
+
+    // Set by a flow that renders `RESEND` components; sign-in and sign-up do not render them yet.
+    internal var onResend: ((String) -> Unit)? = null
     private val fieldValues = mutableStateMapOf<String, String>()
 
     fun fieldValue(name: String): String = fieldValues[name] ?: ""
@@ -392,6 +396,10 @@ internal fun FlowStepComponentView(
             ActionComponentView(component = component, state = state, i18n = i18n, modifier = modifier)
         }
 
+        component.type == "RESEND" && state.onResend != null -> {
+            ResendComponentView(component = component, state = state, i18n = i18n, modifier = modifier)
+        }
+
         component.type?.endsWith("_INPUT") == true -> {
             FieldComponentView(component = component, state = state, modifier = modifier)
         }
@@ -545,6 +553,29 @@ private fun ActionComponentView(
                 Text(label)
             }
         }
+    }
+}
+
+/** A `RESEND` action: a text button that submits its own action with no inputs. */
+@Composable
+private fun ResendComponentView(
+    component: FlowComponent,
+    state: FlowStepState,
+    i18n: ThunderIDI18n,
+    modifier: Modifier = Modifier,
+) {
+    val componentKey = component.identifierKey() ?: return
+    val actionId = state.actions.firstOrNull { it.identifierKey() == componentKey }?.let { it.id ?: it.ref } ?: componentKey
+    val label =
+        state.templateResolver?.resolve(component.label)?.takeIf { it.isNotBlank() }
+            ?: component.label?.takeIf { it.isNotBlank() && !it.contains("{{") }
+            ?: i18n.resolve("${state.i18nPrefix}.resend")
+    TextButton(
+        onClick = { state.onResend?.invoke(actionId) },
+        enabled = !state.isLoading,
+        modifier = modifier.fillMaxWidth().testTag("thunderid-action-$actionId"),
+    ) {
+        Text(label)
     }
 }
 

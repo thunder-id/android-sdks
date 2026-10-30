@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import dev.thunderid.android.AttributeVerification
 import dev.thunderid.android.EmbeddedFlowRequestConfig
 import dev.thunderid.android.EmbeddedFlowResponse
 import dev.thunderid.android.EmbeddedSignInPayload
@@ -72,6 +73,7 @@ val CheckDefs =
         CheckDef("refresh", "Session", "Token refresh", "getAccessToken() · auto refresh"),
         CheckDef("storage", "Session", "Secure token storage", "EncryptedStorageAdapter"),
         CheckDef("user", "Session", "User info", "client.getUser()"),
+        CheckDef("verification", "Session", "Attribute verification", "verifyAttribute() · verifiedAttributes"),
         CheckDef("orgs", "Session", "Organizations", "organizations()"),
         CheckDef("endpoints", "Endpoints", "Management endpoints", "ThunderIDConfig.endpoints · ThunderIDFetcher"),
         CheckDef("groups", "Management", "Groups", "client.groups.list() · get()"),
@@ -236,6 +238,7 @@ class ChecksController(
             "refresh" -> tokenRefresh(state)
             "storage" -> secureStorage()
             "user" -> userInfo(state)
+            "verification" -> attributeVerification(state)
             "orgs" -> unavailable("The Android SDK has no organizations API. Only ThunderIDConfig.organizationHandle exists.")
             "endpoints" -> endpoints(state)
             "groups" -> management(state) { groups(state) }
@@ -433,6 +436,22 @@ class ChecksController(
                 { "profile unavailable (${it.message})" },
             )
         return pass("sub=${user.sub}, ${user.claims.size} claims, $profileNote")
+    }
+
+    /**
+     * Reports which attributes can be verified and their status. It does not start a verification,
+     * which sends a code; the VerifyAttribute story in the explorer does.
+     */
+    private suspend fun attributeVerification(state: ThunderIDState): CheckResult {
+        if (!state.isSignedIn) return fail("Not signed in. Sign in first.")
+        val schema = state.getUserSchema()
+        val verifiable = schema.keys.filter { AttributeVerification.isVerifiableAttribute(it, schema) }.sorted()
+        if (verifiable.isEmpty()) return fail("The user schema has no email or mobile attribute")
+        val verified =
+            state.client.getUserProfile().verifiedAttributes
+                ?: return fail("/users/me reports no verifiedAttributes; the server does not support verification")
+        val statuses = verifiable.joinToString(", ") { "$it ${if (it in verified) "verified" else "unverified"}" }
+        return pass("$statuses. Run the VerifyAttribute story to verify one.")
     }
 
     private fun theme(scheme: ColorScheme): CheckResult {

@@ -152,6 +152,33 @@ val ComponentSpecs: List<ComponentSpec> =
             },
         ),
         ComponentSpec(
+            id = "verify",
+            group = "User",
+            name = "VerifyAttribute",
+            controls =
+                listOf(
+                    Control.Choice("attribute", listOf("email", "mobile_number")),
+                    Control.Text("flowHandle"),
+                ),
+            defaults = mapOf("attribute" to "email", "flowHandle" to "default-self-attribute-verification-flow"),
+            stories =
+                listOf(
+                    Story("live", "Live verification", emptyMap()),
+                    Story("profile", "UserProfile status", emptyMap()),
+                ),
+            code = { story, props ->
+                if (story == "profile") {
+                    "UserProfile(\n    verificationFlowHandle = ${quote(props.text("flowHandle"))},\n)"
+                } else {
+                    "VerifyAttribute(\n    attribute = ${quote(props.text("attribute"))},\n" +
+                        "    flowHandle = ${quote(props.text("flowHandle"))},\n" +
+                        "    onComplete = { /* verified */ },\n" +
+                        "    onError = { message -> /* show message */ },\n" +
+                        "    onCancel = { /* close */ },\n)"
+                }
+            },
+        ),
+        ComponentSpec(
             id = "language",
             group = "Presentation",
             name = "LanguageSwitcher",

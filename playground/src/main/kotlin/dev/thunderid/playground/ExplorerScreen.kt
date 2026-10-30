@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -38,6 +39,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +64,8 @@ import dev.thunderid.android.User
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.account.BaseUserAvatar
 import dev.thunderid.compose.components.account.UserAvatar
+import dev.thunderid.compose.components.account.UserProfile
+import dev.thunderid.compose.components.account.VerifyAttribute
 import dev.thunderid.compose.components.auth.SignIn
 import dev.thunderid.compose.components.auth.buttons.BaseSignInButton
 import dev.thunderid.compose.components.auth.buttons.BaseSignOutButton
@@ -361,6 +365,14 @@ private fun StoryPreview(
             }
         }
 
+        "verify" -> {
+            VerifyAttributeStory(
+                storyId = storyId,
+                attribute = props["attribute"] as? String ?: "email",
+                flowHandle = props["flowHandle"] as? String ?: "",
+            )
+        }
+
         "language" -> {
             val locales = (props["locales"] as? String ?: "en-US").split(" ")
             if (storyId == "styled") {
@@ -410,6 +422,47 @@ private fun StoryPreview(
                     modifier = Modifier.fillMaxWidth(),
                     onComplete = { EventLog.ok("signIn:completed", "mode=app-native (explorer)") },
                     onError = { EventLog.error("signIn:error", it) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Starting a verification sends a code or a link, so the live story waits for a tap rather than
+ * starting when it is shown, and a new tap after Cancel starts a new one.
+ */
+@Composable
+private fun VerifyAttributeStory(
+    storyId: String,
+    attribute: String,
+    flowHandle: String,
+) {
+    val thunder = LocalThunderID.current
+    var started by remember(attribute, flowHandle) { mutableStateOf(false) }
+    when {
+        !thunder.isSignedIn -> {
+            Text("Sign in to verify your own attributes", color = Pg.TextMuted, fontSize = 13.sp)
+        }
+
+        storyId == "profile" -> {
+            UserProfile(verificationFlowHandle = flowHandle)
+        }
+
+        !started -> {
+            Button(onClick = { started = true }) { Text("Start verification (sends a code)") }
+        }
+
+        else -> {
+            key(attribute, flowHandle) {
+                VerifyAttribute(
+                    attribute = attribute,
+                    flowHandle = flowHandle,
+                    modifier = Modifier.fillMaxWidth(),
+                    onComplete = { EventLog.ok("verifyAttribute:complete", attribute) },
+                    onDone = { EventLog.info("verifyAttribute:done", attribute) },
+                    onError = { EventLog.error("verifyAttribute:error", it) },
+                    onCancel = { started = false },
                 )
             }
         }

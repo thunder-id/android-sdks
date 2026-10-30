@@ -49,6 +49,10 @@ paging and selection), `NamedResourceFormState` and the other form states (value
 details states (the record and its actions). The explorer's **Custom rendering** group draws `UserList` as Material
 `ListItem`s with a pager, `GroupCreate` as a Material form and `UserDetails` as a Material card.
 
+`VerifyAttribute` and `BaseVerifyAttribute` take the same lambda. Their `VerifyAttributeState` carries the step's
+fields, values and setters, `submit`, `resend` with `resendActionId`, `done` for a link, `onCancel`, where the code
+went, loading, the translated error and `successMessage`. The group draws a verification as a Material card.
+
 ## Prerequisites
 
 - JDK 17 and the Android SDK (API 34). Set `ANDROID_HOME`, or add `sdk.dir` to a

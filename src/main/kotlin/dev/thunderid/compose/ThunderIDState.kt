@@ -14,6 +14,7 @@ import dev.thunderid.android.User
 import dev.thunderid.android.UserProfile
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import dev.thunderid.compose.management.ResourceInvalidator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -109,6 +110,20 @@ class ThunderIDState(
         user = merged
         client.setCachedUser(merged)
         profileVersion++
+    }
+
+    /** Re-reads `/users/me` and merges it into [user]. Returns `null` when the read fails. */
+    internal suspend fun reloadUserProfile(): UserProfile? {
+        val profile =
+            try {
+                client.getUserProfile()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return null
+            }
+        mergeUserProfile(profile)
+        return profile
     }
 
     // Launched on scope rather than awaited inline, since initialize()/refresh() are called

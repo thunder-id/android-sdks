@@ -64,6 +64,18 @@ data class UserProfile(
     val attributes: Map<String, Any> = emptyMap(),
     val display: String? = null,
     val isReadOnly: Boolean = false,
+    /**
+     * The attributes whose current value the user has verified, keyed by attribute name. Read-only and
+     * reported by the server: `null` when it does not report verification, so every status is unknown,
+     * and empty when none is verified.
+     */
+    val verifiedAttributes: Map<String, VerifiedAttribute>? = null,
+)
+
+/** Verification record of one of the user's attributes, as `/users/me` returns it. */
+data class VerifiedAttribute(
+    /** When the attribute's current value was verified, as an RFC 3339 timestamp. */
+    val verifiedAt: String? = null,
 )
 
 /** Attribute schema metadata returned by `GET /users/me/meta`. */
@@ -136,6 +148,9 @@ enum class FlowType(
     REGISTRATION("REGISTRATION"),
     PASSWORD_RECOVERY("PASSWORD_RECOVERY"),
     INVITED_USER_REGISTRATION("INVITED_USER_REGISTRATION"),
+
+    /** An operation the signed-in user runs on their own account, such as verifying an attribute. */
+    SELF_SERVICE("SELF_SERVICE"),
 }
 
 data class EmbeddedFlowResponse(

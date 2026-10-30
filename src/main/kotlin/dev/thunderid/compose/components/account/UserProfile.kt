@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -54,11 +55,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.thunderid.android.AttributeSchema
+import dev.thunderid.android.AttributeVerification
 import dev.thunderid.android.R
+import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.User
 import dev.thunderid.android.UserProfile
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.i18n.ThunderIDI18n
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 // Attribute names that are always readonly regardless of schema mutability (data contract).
@@ -296,6 +300,37 @@ internal fun deepMergeAttributes(
     return result
 }
 
+/**
+ * Saves [field] as [value] and applies the profile the server stored. The field stays in editing until
+ * then, so while the save is in flight, and after it fails, the typed value shows no verification status
+ * and no verify action. A changed, unverified email then opens its verification.
+ */
+internal suspend fun saveProfileField(
+    state: UserProfileState,
+    field: ProfileField,
+    value: String,
+    client: ThunderIDClient,
+    i18n: ThunderIDI18n = ThunderIDI18n(),
+    applyProfile: (UserProfile) -> Unit,
+): Boolean {
+    val fieldPayload = buildUpdatePayload(field.name, value, field.isMultiValued)
+    val currentAttributes = state.profile?.attributes ?: emptyMap()
+    val updated =
+        try {
+            client.updateUserProfile(deepMergeAttributes(currentAttributes, fieldPayload))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            state.fieldErrors[field.name] = i18n.resolve("userProfile.error.save")
+            return false
+        }
+    applyProfile(updated)
+    state.editingFields[field.name] = false
+    state.editedValues.remove(field.name)
+    if (shouldVerifyAfterSave(field, updated)) state.verify(field.name)
+    return true
+}
+
 /** State passed to the [BaseUserProfile] builder slot. */
 @Stable
 class UserProfileState {
@@ -312,6 +347,14 @@ class UserProfileState {
     var error by mutableStateOf<String?>(null)
         internal set
 
+    /**
+     * The attribute whose verification is open, or `null`. Set by [verify], and by a save that changes an
+     * unverified email; a builder that offers verification renders [VerifyAttribute] for it, and the
+     * profile it re-reads then updates [verificationStatus].
+     */
+    var verifyingField by mutableStateOf<String?>(null)
+        internal set
+
     internal val editedValues = mutableStateMapOf<String, String>()
     internal val editingFields = mutableStateMapOf<String, Boolean>()
     internal val fieldErrors = mutableStateMapOf<String, String>()
@@ -320,6 +363,7 @@ class UserProfileState {
     internal var onCancel: (String) -> Unit = {}
     internal var onFieldChange: (String, String) -> Unit = { _, _ -> }
     internal var onSave: (String) -> Unit = {}
+    internal var onVerificationFinished: (UserProfile?) -> Unit = {}
 
     fun isEditing(name: String): Boolean = editingFields[name] == true
 
@@ -337,15 +381,49 @@ class UserProfileState {
     ) = onFieldChange(name, value)
 
     fun save(name: String) = onSave(name)
+
+    /**
+     * The verification status of [field] from `/users/me`'s `verifiedAttributes`, or `null` when there is
+     * none to show: the server does not report it, the field is not an `email` or `mobile` property, it
+     * has no stored value, or it is being edited.
+     */
+    fun verificationStatus(field: ProfileField): AttributeVerificationStatus? =
+        verificationStatusOf(field, profile?.verifiedAttributes, isEditing(field.name))
+
+    /** When [field] was verified, as the server reported it. */
+    fun verifiedAt(field: ProfileField): String? = profile?.verifiedAttributes?.get(field.name)?.verifiedAt
+
+    /** Whether to offer the verify action: a stored, unverified email or mobile value, not being edited. */
+    fun canVerify(field: ProfileField): Boolean =
+        profile?.isReadOnly == false &&
+            canVerifyField(field, profile?.verifiedAttributes, isEditing(field.name), verifyingField)
+
+    /** Opens the verification of [name]. */
+    fun verify(name: String) {
+        verifyingField = name
+    }
+
+    fun closeVerification() {
+        verifyingField = null
+    }
+
+    /** Shows the profile re-read after a verification, so its status updates. `null` keeps the current one. */
+    fun verificationFinished(profile: UserProfile?) = onVerificationFinished(profile)
 }
 
-/** Editable, schema-driven user profile form (spec §8.4 Presentation). */
+/**
+ * Editable, schema-driven user profile form (spec §8.4 Presentation). Shows Verified or Unverified
+ * beside each email and mobile attribute when the server reports verification, offers Verify for an
+ * unverified stored value, and opens verification by itself after a changed email is saved. Verification
+ * runs the `SELF_SERVICE` flow named by [verificationFlowHandle].
+ */
 @Composable
 fun UserProfile(
     modifier: Modifier = Modifier,
     attributeMapping: Map<String, List<String>> = emptyMap(),
     onSaved: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
+    verificationFlowHandle: String = AttributeVerification.DEFAULT_FLOW_HANDLE,
 ) {
     val thunderState = LocalThunderID.current
     val i18n = thunderState.i18n
@@ -455,6 +533,11 @@ fun UserProfile(
         if (editingField != null) {
             ProfileFieldEditDialog(field = editingField, state = state, i18n = i18n)
         }
+
+        val verifyingField = state.fields.firstOrNull { it.name == state.verifyingField }
+        if (verifyingField != null && editingField == null) {
+            VerifyAttributeDialog(field = verifyingField, state = state, flowHandle = verificationFlowHandle, i18n = i18n)
+        }
     }
 }
 
@@ -488,6 +571,17 @@ private fun ProfileFieldRow(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+        state.verificationStatus(field)?.let { status ->
+            VerificationStatusChip(field = field, status = status, verifiedAt = state.verifiedAt(field), i18n = i18n)
+        }
+        if (state.canVerify(field)) {
+            TextButton(
+                onClick = { state.verify(field.name) },
+                modifier = Modifier.testTag("thunderid-verify-${field.name}"),
+            ) {
+                Text(i18n.resolve("userProfile.verification.verify"), color = MaterialTheme.colorScheme.secondary)
             }
         }
         if (isEditable) {
@@ -668,6 +762,8 @@ fun BaseUserProfile(
 
     fun editField(name: String) {
         val field = state.fields.firstOrNull { it.name == name } ?: return
+        // A value being edited is not verified.
+        if (state.verifyingField == name) state.closeVerification()
         state.editedValues[name] = stringifyFieldValue(field.rawValue)
         state.editingFields[name] = true
         state.fieldErrors.remove(name)
@@ -698,17 +794,8 @@ fun BaseUserProfile(
         scope.launch {
             state.isLoading = true
             try {
-                val fieldPayload = buildUpdatePayload(name, value, field.isMultiValued)
-                val currentAttributes = state.profile?.attributes ?: emptyMap()
-                val payload = deepMergeAttributes(currentAttributes, fieldPayload)
-                val updated = thunderState.client.updateUserProfile(payload)
-                applyProfile(schema, updated)
-                state.editingFields[name] = false
-                state.editedValues.remove(name)
-                onSaved?.invoke()
-            } catch (e: Exception) {
-                state.fieldErrors[name] = e.message ?: i18n.resolve("userProfile.error.save")
-                onError?.invoke()
+                val saved = saveProfileField(state, field, value, thunderState.client, i18n) { applyProfile(schema, it) }
+                if (saved) onSaved?.invoke() else onError?.invoke()
             } finally {
                 state.isLoading = false
             }
@@ -719,6 +806,7 @@ fun BaseUserProfile(
     state.onCancel = ::cancelField
     state.onFieldChange = ::changeField
     state.onSave = ::saveField
+    state.onVerificationFinished = { profile -> profile?.let { applyProfile(schema, it) } }
 
     // No /users/me - render from thunderState.user's claims. Keyed on thunderState.user
     // since it can still be loading when this composable first mounts.
@@ -748,5 +836,8 @@ fun BaseUserProfile(
         }
     }
 
-    Box(modifier = modifier) { content(state) }
+    // A VerifyAttribute the builder renders hands its re-read profile here, so the status updates.
+    CompositionLocalProvider(LocalVerifiedProfileSink provides { state.verificationFinished(it) }) {
+        Box(modifier = modifier) { content(state) }
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.thunderid.android.management.ManagedUser
 import dev.thunderid.android.management.resolveManagedIdentityName
+import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.components.account.BaseVerifyAttribute
+import dev.thunderid.compose.components.account.VerifyAttribute
+import dev.thunderid.compose.components.account.VerifyAttributePhase
+import dev.thunderid.compose.components.account.VerifyAttributeState
 import dev.thunderid.compose.components.admin.AdminListState
 import dev.thunderid.compose.components.admin.ApplicationDetails
 import dev.thunderid.compose.components.admin.ApplicationDetailsState
@@ -51,9 +57,9 @@ private val CUSTOM_STORIES =
     )
 
 /**
- * Stories that replace an admin component's default UI through its `content` lambda. The lambda gets the
- * component's state (rows and paging, values and submit, or the loaded record), so any Compose layout can
- * draw it.
+ * Stories that replace a component's default UI through its `content` lambda. The lambda gets the
+ * component's state (rows and paging, values and submit, the loaded record, or a verification step), so
+ * any Compose layout can draw it.
  */
 val CustomRenderSpecs: List<ComponentSpec> =
     listOf(
@@ -158,6 +164,42 @@ val CustomRenderSpecs: List<ComponentSpec> =
                 """.trimMargin()
             },
         ),
+        ComponentSpec(
+            id = "customVerifyAttribute",
+            group = "Custom rendering",
+            name = "VerifyAttribute → Card",
+            controls =
+                listOf(
+                    Control.Choice("attribute", listOf("email", "mobile_number")),
+                    Control.Text("flowHandle"),
+                ),
+            defaults = mapOf("attribute" to "email", "flowHandle" to "default-self-attribute-verification-flow"),
+            stories = CUSTOM_STORIES,
+            code = { story, props ->
+                val args = "attribute = ${quote(props.text("attribute"))}, flowHandle = ${quote(props.text("flowHandle"))}"
+                val head = if (story == "live") "VerifyAttribute($args, onCancel = { /* close */ })" else "BaseVerifyAttribute($args)"
+                """
+                |$head { step ->
+                |    Card {
+                |        Text(step.title, style = MaterialTheme.typography.titleLarge)
+                |        step.destinationMessage?.let { Text(it) }
+                |        step.fields().keys.forEach { name ->
+                |            OutlinedTextField(value = step.fieldValue(name), onValueChange = { step.setField(name, it) })
+                |        }
+                |        step.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                |        step.successMessage?.let { Text(it) }
+                |        val submit = step.actions.firstOrNull { (it.id ?: it.ref) != step.resendActionId }
+                |        if (step.phase == VerifyAttributePhase.ACTIVE && submit != null) {
+                |            Button(onClick = { step.submit(submit.id ?: submit.ref.orEmpty()) }, enabled = !step.isLoading) {
+                |                Text("Verify")
+                |            }
+                |        }
+                |        step.resendActionId?.let { id -> TextButton(onClick = { step.resend(id) }) { Text("Resend") } }
+                |    }
+                |}
+                """.trimMargin()
+            },
+        ),
     )
 
 /** Whether [componentId] is one of the custom rendering stories. */
@@ -226,6 +268,15 @@ fun CustomRenderPreview(
                     },
                 ) { ApplicationCard(it) }
             }
+        }
+
+        "customVerifyAttribute" -> {
+            CustomVerifyAttribute(
+                live = live,
+                attribute = props.text("attribute").ifBlank { "email" },
+                flowHandle = props.text("flowHandle"),
+                onTap = onTap,
+            )
         }
 
         else -> {
@@ -372,6 +423,96 @@ private fun ApplicationCard(details: ApplicationDetailsState) {
                             Text("Regenerate secret")
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Starting a verification sends a code or a link, so the story waits for a tap, and a new tap after
+ * Cancel starts a new one. The live story also passes `onCancel`, which the card reads from the state.
+ */
+@Composable
+private fun CustomVerifyAttribute(
+    live: Boolean,
+    attribute: String,
+    flowHandle: String,
+    onTap: () -> Unit,
+) {
+    var started by remember(attribute, flowHandle, live) { mutableStateOf(false) }
+    when {
+        !LocalThunderID.current.isSignedIn -> {
+            Text("Sign in to verify your own attributes.", color = MaterialTheme.colorScheme.onBackground)
+        }
+
+        !started -> {
+            Button(onClick = { started = true }) { Text("Start verification (sends a code)") }
+        }
+
+        live -> {
+            key(attribute, flowHandle) {
+                VerifyAttribute(
+                    attribute = attribute,
+                    flowHandle = flowHandle,
+                    modifier = Modifier.fillMaxWidth(),
+                    onComplete = { EventLog.ok("verifyAttribute:complete", attribute) },
+                    onDone = onTap,
+                    onError = { EventLog.error("verifyAttribute:error", it) },
+                    onCancel = { started = false },
+                ) { VerificationCard(it) }
+            }
+        }
+
+        else -> {
+            key(attribute, flowHandle) {
+                BaseVerifyAttribute(
+                    attribute = attribute,
+                    flowHandle = flowHandle,
+                    modifier = Modifier.fillMaxWidth(),
+                    onComplete = { EventLog.ok("verifyAttribute:complete", attribute) },
+                    onDone = onTap,
+                    onError = { EventLog.error("verifyAttribute:error", it) },
+                ) { VerificationCard(it) }
+            }
+        }
+    }
+}
+
+/** A verification step drawn as a Material card: the SDK's fields, actions and messages, none of its UI. */
+@Composable
+private fun VerificationCard(step: VerifyAttributeState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (step.phase == VerifyAttributePhase.LOADING) CircularProgressIndicator()
+            if (step.phase == VerifyAttributePhase.ACTIVE) {
+                Text(step.title, style = MaterialTheme.typography.titleLarge)
+                step.destinationMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                step.fields().keys.forEach { name ->
+                    OutlinedTextField(
+                        value = step.fieldValue(name),
+                        onValueChange = { step.setField(name, it) },
+                        label = { Text("Code") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            step.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            step.successMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                step.onCancel?.let { cancel -> TextButton(onClick = cancel) { Text("Close") } }
+                step.resendActionId?.let { id ->
+                    TextButton(onClick = { step.resend(id) }, enabled = !step.isLoading) { Text("Resend") }
+                }
+                val submit = step.actions.firstOrNull { (it.id ?: it.ref) != step.resendActionId }
+                if (step.phase == VerifyAttributePhase.ACTIVE && submit != null) {
+                    Button(onClick = { step.submit(submit.id ?: submit.ref.orEmpty()) }, enabled = !step.isLoading) {
+                        Text(if (step.isLoading) "Verifying…" else "Verify")
+                    }
+                }
+                if (step.isAwaitingLink) {
+                    Button(onClick = { step.done() }, enabled = !step.isLoading) { Text("Done") }
                 }
             }
         }

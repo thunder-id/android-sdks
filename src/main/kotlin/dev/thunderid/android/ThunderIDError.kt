@@ -42,6 +42,9 @@ enum class ThunderIDErrorCode(
     CONFIRMATION_CODE_INVALID("CONFIRMATION_CODE_INVALID"),
     CONFIRMATION_CODE_EXPIRED("CONFIRMATION_CODE_EXPIRED"),
 
+    // Verification: the server refused a self user attribute verification (an `ERROR` step or an HTTP 4xx).
+    VERIFICATION_FAILED("VERIFICATION_FAILED"),
+
     // Passkey / WebAuthn
     PASSKEY_NOT_SUPPORTED("PASSKEY_NOT_SUPPORTED"),
     PASSKEY_CANCELLED("PASSKEY_CANCELLED"),

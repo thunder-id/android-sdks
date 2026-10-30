@@ -41,7 +41,8 @@ data class ThunderIDHttpConfig(
 
 /**
  * Collection URL overrides for the management operations, for a management API that runs on a different
- * host from `baseUrl`. A `null` entry falls back to `{baseUrl}/{collection}`. A single resource is addressed
+ * host from `baseUrl`. A `null` entry falls back to `{baseUrl}/{collection}`; in backend mode `{baseUrl}` here
+ * is the API base, `endpoints.backend.apiBaseUrl` when set. A single resource is addressed
  * as `{collection}/{id}`, and its sub-resources as `{collection}/{id}/{sub-resource}`, for example
  * `{groups}/{id}/members` or `{roles}/{id}/assignments`.
  *

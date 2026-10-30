@@ -425,6 +425,7 @@ internal class BackendClient(
             isSignedIn = json.get("isSignedIn")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false,
             user = user,
             expiresAt = json.get("expiresAt")?.takeIf { it.isJsonPrimitive }?.asDouble,
+            scope = json.string("scope"),
         )
     }
 

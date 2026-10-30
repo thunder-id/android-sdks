@@ -114,7 +114,7 @@ class BackendModeTest {
         }
 
     @Test
-    fun `the SDK's own calls under baseUrl go through the proxy with the handle`() =
+    fun `the SDK's own calls under the API base go through the proxy with the handle`() =
         runTest {
             signIn(client, fake, storage)
             fake.on("GET", "$PROXY/users/me", response(200, """{"id":"u1"}"""))
@@ -123,6 +123,45 @@ class BackendModeTest {
             val proxied = fake.to("$PROXY/users/me").single()
             assertEquals("h-1", proxied.headers[SESSION_HANDLE_HEADER])
             assertNull(proxied.headers["Authorization"])
+        }
+
+    @Test
+    fun `management calls go to the API base, through the proxy`() =
+        runTest {
+            signIn(client, fake, storage)
+            fake.on("DELETE", "$PROXY/users/u-1", response(204, ""))
+
+            client.users.delete("u-1")
+
+            val proxied = fake.to("$PROXY/users/u-1").single()
+            assertEquals("h-1", proxied.headers[SESSION_HANDLE_HEADER])
+            assertTrue(fake.requests.none { it.url.startsWith("$BACKEND/users") || it.url.startsWith("$API/users") })
+        }
+
+    @Test
+    fun `the granted permissions come from the session, without the access token`() =
+        runTest {
+            fake.on(
+                "POST",
+                SESSION,
+                response(200, """{"handle":"h-1","isSignedIn":true,"scope":"openid system:user  system:group:view"}"""),
+            )
+            client.initialize(backendConfig(), storage)
+            client.buildSignInUrl()
+            client.handleRedirectCallback("$REDIRECT_URI?session_code=one-time")
+
+            assertEquals(listOf("openid", "system:user", "system:group:view"), client.getGrantedPermissions())
+            assertTrue(fake.to(TOKEN).isEmpty())
+        }
+
+    @Test
+    fun `a session without scope grants nothing, without asking for the access token`() =
+        runTest {
+            signIn(client, fake, storage)
+            fake.on("POST", TOKEN, tokenResponse("t-1"))
+
+            assertTrue(client.getGrantedPermissions().isEmpty())
+            assertTrue(fake.to(TOKEN).isEmpty())
         }
 
     @Test

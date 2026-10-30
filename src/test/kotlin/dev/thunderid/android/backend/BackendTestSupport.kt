@@ -77,9 +77,9 @@ internal class FakeBackend : ThunderIDFetcher {
 
 internal fun backendConfig(
     bypass: ThunderIDBackendBypass = ThunderIDBackendBypass(urls = listOf(DATA_PLANE)),
-    backend: ThunderIDBackendEndpoints = ThunderIDBackendEndpoints(baseUrl = BACKEND, bypass = bypass),
+    backend: ThunderIDBackendEndpoints = ThunderIDBackendEndpoints(apiBaseUrl = API, bypass = bypass),
 ) = ThunderIDConfig(
-    baseUrl = API,
+    baseUrl = BACKEND,
     afterSignInUrl = REDIRECT_URI,
     afterSignOutUrl = "com.example.app://signed-out",
     endpoints = ThunderIDEndpoints(backend = backend),

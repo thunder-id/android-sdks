@@ -74,7 +74,7 @@ details states (the record and its actions). The explorer's **Custom rendering**
    | `THUNDERID_AFTER_SIGN_IN_URL` | Sign-in redirect URI. Its scheme is registered on the app, so changing it here is enough. |
    | `THUNDERID_AFTER_SIGN_OUT_URL` | Sign-out redirect URI. |
    | `THUNDERID_SCOPES` | Space separated scopes. Defaults to `openid profile email`. |
-   | `THUNDERID_BACKEND_URL` | Optional. Base URL of a backend that signs the app in and keeps the tokens (`endpoints.backend`). Leave empty to sign in directly. |
+   | `THUNDERID_BACKEND_URL` | Optional. Base URL of a backend that signs the app in and keeps the tokens. When set, it becomes `baseUrl`, and `THUNDERID_BASE_URL` becomes the API behind the backend's proxy (`endpoints.backend.apiBaseUrl`). Leave empty to sign in directly. |
 
    Optional management endpoint overrides. These become `ThunderIDConfig.endpoints`; leave them blank to use
    `{THUNDERID_BASE_URL}/{collection}`.

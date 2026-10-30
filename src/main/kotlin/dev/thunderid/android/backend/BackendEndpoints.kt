@@ -29,17 +29,23 @@ internal data class ResolvedBackendEndpoints(
 
 /**
  * Resolves the backend endpoints from `endpoints.backend`, or returns `null` when it is not set and
- * sign-in does not run on a backend. `baseUrl` is the API base, as in the browser SDKs.
+ * sign-in does not run on a backend. The config's `baseUrl` is the backend: a relative endpoint resolves
+ * against it, and an absolute one is used as is. The API base is `endpoints.backend.apiBaseUrl`, or
+ * `baseUrl` when it is not set.
  *
- * Fails with [ThunderIDErrorCode.INVALID_CONFIGURATION], before any network call, when the backend
- * base URL or a bypass URL does not use HTTPS, or when an endpoint is not a path: every backend call
- * has to go to the one pinned base.
+ * Fails with [ThunderIDErrorCode.INVALID_CONFIGURATION], before any network call, when `baseUrl`, the API
+ * base, an absolute endpoint or a bypass URL does not use HTTPS, or when an endpoint is neither a path nor
+ * an absolute URL.
  */
 internal fun resolveBackendEndpoints(config: ThunderIDConfig): ResolvedBackendEndpoints? {
     val endpoints = config.endpoints.backend ?: return null
-    val baseUrl = endpoints.baseUrl.trimEnd('/')
+    val baseUrl = config.baseUrl.trimEnd('/')
     if (!isHttpsUrl(baseUrl)) {
-        throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "endpoints.backend.baseUrl must be an HTTPS URL")
+        throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl must be an HTTPS URL in backend mode")
+    }
+    val apiBaseUrl = endpoints.apiBaseUrl?.trimEnd('/') ?: baseUrl
+    if (!isHttpsUrl(apiBaseUrl)) {
+        throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "endpoints.backend.apiBaseUrl must be an HTTPS URL")
     }
     val bypassUrls = endpoints.bypass.urls.map { it.trimEnd('/') }
     if (bypassUrls.any { !isHttpsUrl(it) }) {
@@ -52,17 +58,20 @@ internal fun resolveBackendEndpoints(config: ThunderIDConfig): ResolvedBackendEn
         default: String,
     ): String {
         val value = path ?: "$DEFAULT_BACKEND_BASE_PATH/$default"
-        if (!value.startsWith("/") || value.startsWith("//")) {
-            throw IAMException(
+        return when {
+            value.startsWith("/") && !value.startsWith("//") -> baseUrl + value
+
+            isHttpsUrl(value) -> value
+
+            else -> throw IAMException(
                 ThunderIDErrorCode.INVALID_CONFIGURATION,
-                "endpoints.backend.$name must be a path under endpoints.backend.baseUrl",
+                "endpoints.backend.$name must be a path under baseUrl or an HTTPS URL",
             )
         }
-        return baseUrl + value
     }
 
     return ResolvedBackendEndpoints(
-        apiBaseUrl = config.baseUrl.trimEnd('/'),
+        apiBaseUrl = apiBaseUrl,
         signIn = resolve("signIn", endpoints.signIn, "signin"),
         session = resolve("session", endpoints.session, "session"),
         checkSession = resolve("checkSession", endpoints.checkSession, "checksession"),
@@ -85,11 +94,14 @@ private fun isHttpsUrl(url: String): Boolean {
  *
  * @property user The ID token's user claims, without the protocol claims.
  * @property expiresAt When the access token expires, in seconds since the epoch.
+ * @property scope The scopes the access token was granted, space separated, as the token response's `scope`
+ *   (RFC 6749 §5.1). The app reads its permissions from here, so the token can stay on the backend.
  */
 internal data class BackendSession(
     val isSignedIn: Boolean,
     val user: Map<String, Any>? = null,
     val expiresAt: Double? = null,
+    val scope: String? = null,
 ) {
     companion object {
         val SIGNED_OUT = BackendSession(isSignedIn = false)

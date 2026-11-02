@@ -3,6 +3,7 @@
 
 package dev.thunderid.compose.components.admin
 
+import dev.thunderid.android.management.AccountLifecycleAction
 import dev.thunderid.android.management.Agent
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.GroupMemberInput
@@ -113,6 +114,9 @@ data class AgentCreateFormState(
  * @property attributes The user's attributes, without the hidden ones.
  * @property onDelete Deletes the user. `null` when deletion is not allowed, including for read-only users.
  * @property onUpdate Saves the given attributes. `null` when editing is not allowed, including for read-only users.
+ * @property lifecycleActions The account lifecycle actions offered for the user. Empty when none is allowed.
+ * @property onLifecycleAction Runs an account lifecycle action, with the operator's note on a suspension. `null`
+ *   when none is allowed. Ask for confirmation before suspending or unsuspending.
  */
 data class UserDetailsState(
     val user: ManagedUser?,
@@ -125,12 +129,18 @@ data class UserDetailsState(
     val isUpdating: Boolean,
     val onDelete: (() -> Unit)?,
     val onUpdate: ((Map<String, Any?>) -> Unit)?,
+    val lifecycleActions: List<AccountLifecycleAction> = emptyList(),
+    val isRunningLifecycleAction: Boolean = false,
+    val onLifecycleAction: AccountLifecycleHandler? = null,
 )
 
 /**
  * What [BaseAgentDetails] hands its `content` lambda.
  *
  * @property onDelete Deletes the agent. `null` when deletion is not allowed, including for read-only agents.
+ * @property lifecycleActions The account lifecycle actions offered for the agent. Empty when none is allowed.
+ * @property onLifecycleAction Runs an account lifecycle action, with the operator's note on a suspension. `null`
+ *   when none is allowed. Ask for confirmation before suspending or unsuspending.
  */
 data class AgentDetailsState(
     val agent: Agent?,
@@ -140,6 +150,9 @@ data class AgentDetailsState(
     val error: String?,
     val isDeleting: Boolean,
     val onDelete: (() -> Unit)?,
+    val lifecycleActions: List<AccountLifecycleAction> = emptyList(),
+    val isRunningLifecycleAction: Boolean = false,
+    val onLifecycleAction: AccountLifecycleHandler? = null,
 )
 
 /**

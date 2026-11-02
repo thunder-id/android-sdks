@@ -6,10 +6,13 @@ package dev.thunderid.compose.management
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDFetcher
+import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.Agent
 import dev.thunderid.android.management.AgentListResponse
 import dev.thunderid.android.management.AgentQueryKeys
@@ -61,15 +64,21 @@ fun <T> rememberResourceQuery(
     return query
 }
 
-/** Remembers a management mutation that invalidates the keys [invalidatedKeys] returns once it succeeds. */
+/**
+ * Remembers a management mutation that invalidates the keys [invalidatedKeys] returns once it succeeds. The
+ * latest [perform] and [invalidatedKeys] run, so an option they read, such as an administration mode, can
+ * change between compositions.
+ */
 @Composable
 fun <I, O> rememberResourceMutation(
     invalidatedKeys: (I) -> List<List<String>>,
     perform: suspend (ThunderIDClient, I) -> O,
 ): ResourceMutationState<I, O> {
     val state = LocalThunderID.current
+    val currentKeys by rememberUpdatedState(invalidatedKeys)
+    val currentPerform by rememberUpdatedState(perform)
     return remember(state) {
-        ResourceMutationState(state.invalidator, invalidatedKeys) { input -> perform(state.client, input) }
+        ResourceMutationState(state.invalidator, { input -> currentKeys(input) }) { input -> currentPerform(state.client, input) }
     }
 }
 
@@ -172,10 +181,17 @@ fun rememberGetUserTypes(
         enabled = enabled,
     ) { it.users.listTypes(limit, offset, fetcher) }
 
+/**
+ * Remembers a mutation that deletes a user, through the user deletion flow when [administrationMode] is
+ * [AdministrationMode.FLOW] and one is configured.
+ */
 @Composable
-fun rememberDeleteUser(fetcher: ThunderIDFetcher? = null): ResourceMutationState<String, Unit> =
+fun rememberDeleteUser(
+    fetcher: ThunderIDFetcher? = null,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
+): ResourceMutationState<String, Unit> =
     rememberResourceMutation({ listOf(listOf(UserQueryKeys.USERS)) }) { client, id ->
-        client.users.delete(id, fetcher)
+        client.users.delete(id, fetcher, administrationMode)
     }
 
 // MARK: - Agents

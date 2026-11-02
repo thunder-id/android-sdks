@@ -632,4 +632,92 @@ class ManagementCoverageApiTest {
             assertEquals(ThunderIDErrorCode.INVALID_INPUT, error.code)
             assertTrue(fetcher.requests.isEmpty())
         }
+
+    // MARK: - Account lifecycle, by kind and action
+
+    @Test
+    fun `runAccountLifecycleAction runs the flow configured for each kind and action`() =
+        runTest {
+            AccountLifecycleSubjectKind.entries.forEach { kind ->
+                kind.flowConfigKeys.forEach { (action, configKey) ->
+                    val fetcher = CoverageFetcher(config = mapOf(configKey to "lifecycle"), flows = mapOf("lifecycle" to "id-lifecycle"))
+
+                    client(fetcher).administration.runAccountLifecycleAction(kind, action, "s-1")
+
+                    assertEquals("$kind $action", listOf(execution("id-lifecycle", "subject" to "s-1")), fetcher.executions())
+                }
+            }
+        }
+
+    @Test
+    fun `runAccountLifecycleAction passes the operator note and reports whether the notification was sent`() =
+        runTest {
+            val fetcher =
+                CoverageFetcher(
+                    config = mapOf(AdministrationFlowConfigKey.USER_SUSPEND to "suspend"),
+                    flows = mapOf("suspend" to "id-suspend"),
+                    execution = """{"flowStatus":"COMPLETE","data":{"additionalData":{"emailSent":"false"}}}""",
+                )
+
+            val result =
+                client(fetcher).administration.runAccountLifecycleAction(
+                    AccountLifecycleSubjectKind.USER,
+                    AccountLifecycleAction.SUSPEND,
+                    "u-1",
+                    operatorNote = "Ticket 4521",
+                )
+
+            assertEquals(false, result.emailSent)
+            assertEquals(listOf(execution("id-suspend", "subject" to "u-1", "operatorNote" to "Ticket 4521")), fetcher.executions())
+        }
+
+    @Test
+    fun `runAccountLifecycleAction fails with the operation's error when no flow is configured`() =
+        runTest {
+            val error =
+                expectError<AdministrationFlowError> {
+                    client(CoverageFetcher()).administration.runAccountLifecycleAction(
+                        AccountLifecycleSubjectKind.AGENT,
+                        AccountLifecycleAction.UNLOCK,
+                        "a-1",
+                    )
+                }
+
+            assertEquals("unlockAgent-NotConfiguredError-001", error.errorCode)
+        }
+
+    @Test
+    fun `runAccountLifecycleAction refuses to unlock an application without calling the server`() =
+        runTest {
+            val fetcher = CoverageFetcher()
+
+            val error =
+                expectError<IAMException> {
+                    client(fetcher).administration.runAccountLifecycleAction(
+                        AccountLifecycleSubjectKind.APPLICATION,
+                        AccountLifecycleAction.UNLOCK,
+                        "app-1",
+                    )
+                }
+
+            assertEquals(ThunderIDErrorCode.INVALID_INPUT, error.code)
+            assertTrue(fetcher.requests.isEmpty())
+        }
+
+    @Test
+    fun `the configured lifecycle flows of a kind resolve in one read and decide the actions offered`() =
+        runTest {
+            val fetcher =
+                CoverageFetcher(
+                    config = mapOf(AdministrationFlowConfigKey.USER_UNLOCK to "unlock-user"),
+                    flows = mapOf("unlock-user" to "id-unlock-user"),
+                )
+            val kind = AccountLifecycleSubjectKind.USER
+
+            val flows = client(fetcher).administration.resolveFlows(kind.flowConfigKeys.values.toList())
+
+            assertEquals(mapOf(AdministrationFlowConfigKey.USER_UNLOCK to "id-unlock-user"), flows)
+            assertEquals(listOf(AccountLifecycleAction.UNLOCK), accountLifecycleActions(kind, AccessStatusValue.LOCKED, flows))
+            assertTrue(accountLifecycleActions(kind, AccessStatusValue.ACTIVE, flows).isEmpty())
+        }
 }

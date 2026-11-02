@@ -22,10 +22,13 @@ import dev.thunderid.android.FlowComponent
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.auth.FederatedAuthSession
+import dev.thunderid.android.management.AccessStatusValue
+import dev.thunderid.android.management.AccountLifecycleSubjectKind
 import dev.thunderid.android.management.AdministrationFlowConfigKey
 import dev.thunderid.android.management.GroupMemberType
 import dev.thunderid.android.management.NotificationChannel
 import dev.thunderid.android.management.RoleAssigneeType
+import dev.thunderid.android.management.accountLifecycleActions
 import dev.thunderid.android.management.getTokenPermissions
 import dev.thunderid.android.management.hasPermission
 import dev.thunderid.compose.ThunderIDState
@@ -620,19 +623,14 @@ class ChecksController(
     private suspend fun lifecycle(state: ThunderIDState): CheckResult {
         // Read-only: the lifecycle operations are flow-only, so this reports which of them can run.
         val keys =
-            listOf(
-                AdministrationFlowConfigKey.USER_SUSPEND,
-                AdministrationFlowConfigKey.USER_UNSUSPEND,
-                AdministrationFlowConfigKey.USER_UNLOCK,
-                AdministrationFlowConfigKey.AGENT_SUSPEND,
-                AdministrationFlowConfigKey.AGENT_UNSUSPEND,
-                AdministrationFlowConfigKey.AGENT_UNLOCK,
-                AdministrationFlowConfigKey.APPLICATION_SUSPEND,
-                AdministrationFlowConfigKey.APPLICATION_UNSUSPEND,
-                AdministrationFlowConfigKey.ACTION_DELETION,
-            )
+            AccountLifecycleSubjectKind.entries.flatMap { it.flowConfigKeys.values } + AdministrationFlowConfigKey.ACTION_DELETION
         val flows = state.client.administration.resolveFlows(keys)
-        return pass("${flows.size} of ${keys.size} lifecycle operations have a flow${namesSuffix(flows.keys.toList())}")
+        // What UserDetails(lifecycleActions = true) offers a locked user with these flows.
+        val lockedUser = accountLifecycleActions(AccountLifecycleSubjectKind.USER, AccessStatusValue.LOCKED, flows)
+        return pass(
+            "${flows.size} of ${keys.size} lifecycle operations have a flow${namesSuffix(flows.keys.toList())}; " +
+                "a locked user offers ${lockedUser.joinToString { it.value }.ifEmpty { "nothing" }}",
+        )
     }
 
     private suspend fun platform(state: ThunderIDState): CheckResult {

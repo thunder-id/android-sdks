@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.GroupMemberInput
 import dev.thunderid.android.management.GroupMemberType
@@ -126,6 +127,9 @@ fun BaseGroupMembers(
  * Shows the members of a group through the group management operations.
  *
  * @param editable Lets users and agents be added to the group and members be removed. Off by default.
+ * @param administrationMode How a member is removed: [AdministrationMode.FLOW] runs the membership removal flow
+ *   the server configures, which can revoke grants and end sessions first. Defaults to
+ *   [AdministrationMode.NATIVE], which calls the API directly.
  * @param content Renders custom UI in place of the default table and picker. See [BaseGroupMembers].
  */
 @Composable
@@ -133,6 +137,7 @@ fun GroupMembers(
     groupId: String,
     modifier: Modifier = Modifier,
     editable: Boolean = false,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
     title: String? = null,
     description: String? = null,
     content: (@Composable (GroupMembersState) -> Unit)? = null,
@@ -143,7 +148,7 @@ fun GroupMembers(
     val users = rememberGetUsers(limit = 100, enabled = editable)
     val agents = rememberGetAgents(limit = 100, enabled = editable)
     val add = rememberAddGroupMembers()
-    val remove = rememberRemoveGroupMembers()
+    val remove = rememberRemoveGroupMembers(administrationMode = administrationMode)
     BaseGroupMembers(
         members = members.data?.members.orEmpty(),
         modifier = modifier,

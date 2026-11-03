@@ -17,6 +17,7 @@ import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.GroupMemberInput
 import dev.thunderid.android.management.GroupMemberType
+import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.android.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.GroupMembersInput
@@ -164,7 +165,7 @@ fun GroupMembers(
                         agents.data
                             ?.agents
                             .orEmpty()
-                            .map { IdentityCandidate(it.id, it.name) },
+                            .map { IdentityCandidate(it.id, resolveAgentName(it)) },
                 )
             } else {
                 null

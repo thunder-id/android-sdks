@@ -118,7 +118,8 @@ data class Agent(
     val id: String,
     val ouId: String,
     val type: String,
-    val name: String,
+    /** The server-resolved display attribute, returned when the agent is read with `include=display`. */
+    val display: String? = null,
     val ouHandle: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
@@ -143,11 +144,13 @@ data class BasicAgent(
     val id: String,
     val ouId: String,
     val type: String,
-    val name: String,
+    /** The server-resolved display attribute, returned when agents are listed with `include=display`. */
+    val display: String? = null,
     val ouHandle: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
     val clientId: String? = null,
+    val attributes: Map<String, Any?>? = null,
     val isReadOnly: Boolean? = null,
     val status: AccessStatus? = null,
 )
@@ -160,11 +163,10 @@ data class AgentListResponse(
     val agents: List<BasicAgent>,
 )
 
-/** The payload used to create an agent. */
+/** The payload used to create an agent. The agent's name goes in [attributes] as `name`. */
 data class CreateAgentRequest(
     val ouId: String,
     val type: String,
-    val name: String,
     val description: String? = null,
     val logoUrl: String? = null,
     val owner: String? = null,
@@ -172,11 +174,10 @@ data class CreateAgentRequest(
     val inboundAuthConfig: List<AgentInboundAuthConfig>? = null,
 )
 
-/** The payload used to update an agent. */
+/** The payload used to update an agent. The agent's name goes in [attributes] as `name`. */
 data class UpdateAgentRequest(
     val ouId: String? = null,
     val type: String? = null,
-    val name: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
     val owner: String? = null,

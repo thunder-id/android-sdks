@@ -200,11 +200,11 @@ object AdminSamples {
                 id = "agt-1",
                 ouId = "ou-root",
                 type = "assistant",
-                name = "Billing assistant",
+                display = "Billing assistant",
                 description = "Answers billing questions",
                 clientId = "billing-assistant",
             ),
-            BasicAgent(id = "agt-2", ouId = "ou-root", type = "assistant", name = "Support triage", clientId = "support-triage"),
+            BasicAgent(id = "agt-2", ouId = "ou-root", type = "assistant", display = "Support triage", clientId = "support-triage"),
         )
 
     val agent =
@@ -212,7 +212,7 @@ object AdminSamples {
             id = "agt-1",
             ouId = "ou-root",
             type = "assistant",
-            name = "Billing assistant",
+            display = "Billing assistant",
             description = "Answers billing questions",
             owner = "usr-1",
             clientId = "billing-assistant",

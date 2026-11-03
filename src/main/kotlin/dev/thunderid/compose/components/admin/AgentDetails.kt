@@ -13,6 +13,7 @@ import dev.thunderid.android.management.AccountLifecycleSubjectKind
 import dev.thunderid.android.management.Agent
 import dev.thunderid.android.management.AgentQueryKeys
 import dev.thunderid.android.management.MembershipGroup
+import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.rememberAccountLifecycle
 import dev.thunderid.compose.management.rememberDeleteAgent
@@ -90,7 +91,7 @@ fun BaseAgentDetails(
     AdminSection(
         block = "agent-details",
         modifier = modifier,
-        title = agent.name,
+        title = resolveAgentName(agent),
         description = agent.description,
         actions = {
             actions?.invoke(this)
@@ -98,7 +99,7 @@ fun BaseAgentDetails(
                 AdminAccountLifecycleButtons(
                     block = "agent-details",
                     actions = lifecycleActions,
-                    name = agent.name,
+                    name = resolveAgentName(agent),
                     onAction = onLifecycleAction,
                     isRunning = isRunningLifecycleAction,
                     collectsOperatorNote = true,
@@ -108,7 +109,7 @@ fun BaseAgentDetails(
                 AdminConfirmButton(
                     block = "agent-details",
                     label = i18n.resolve("admin.agents.details.delete.action"),
-                    confirmText = i18n.translate("admin.agents.details.delete.confirm", "name" to agent.name),
+                    confirmText = i18n.translate("admin.agents.details.delete.confirm", "name" to resolveAgentName(agent)),
                     onConfirm = onDelete,
                     isLoading = isDeleting,
                 )

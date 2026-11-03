@@ -56,6 +56,28 @@ fun hasPermission(
 fun resolveManagedIdentityName(user: ManagedUser): String =
     resolveManagedIdentityName(id = user.id, display = user.display, attributes = user.attributes)
 
+/**
+ * The name to show for an agent: its resolved `display` value, then its `name` attribute when that is a
+ * non-empty string, then its identifier.
+ */
+fun resolveAgentName(agent: Agent): String = resolveAgentName(agent.id, agent.display, agent.attributes)
+
+/**
+ * The name to show for an agent summary: its resolved `display` value, then its `name` attribute when that
+ * is a non-empty string, then its identifier.
+ */
+fun resolveAgentName(agent: BasicAgent): String = resolveAgentName(agent.id, agent.display, agent.attributes)
+
+private fun resolveAgentName(
+    id: String,
+    display: String?,
+    attributes: Map<String, Any?>?,
+): String {
+    if (!display.isNullOrEmpty()) return display
+    val name = attributes?.get("name")
+    return if (name is String && name.isNotEmpty()) name else id
+}
+
 /** The name to show for a managed identity, falling back from [display] through [name] and [attributes] to [id]. */
 fun resolveManagedIdentityName(
     id: String,

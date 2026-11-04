@@ -18,8 +18,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.i18n.ThunderIDI18n
 
-/** Locale picker that updates the active language for component labels (spec §8.4 Presentation). */
+/**
+ * Locale picker that updates the active language for component labels (spec §8.4 Presentation). With no
+ * [locales] it offers the ones the SDK ships strings for, [ThunderIDI18n.BUILT_IN_LOCALES].
+ */
 @Composable
 fun LanguageSwitcher(
     locales: List<String> = emptyList(),
@@ -45,7 +49,7 @@ fun LanguageSwitcher(
     }
 }
 
-/** Unstyled base variant (spec §8.3). */
+/** Unstyled base variant (spec §8.3). With no [locales] it offers [ThunderIDI18n.BUILT_IN_LOCALES]. */
 @Composable
 fun BaseLanguageSwitcher(
     locales: List<String> = emptyList(),
@@ -55,7 +59,7 @@ fun BaseLanguageSwitcher(
     val state = LocalThunderID.current
     // Force recomposition when locale changes
     val active by remember { derivedStateOf { state.i18n.activeLocale } }
-    val available = remember(locales) { locales.ifEmpty { listOf("en-US") } }
+    val available = remember(locales) { locales.ifEmpty { ThunderIDI18n.BUILT_IN_LOCALES } }
 
     Box(modifier = modifier) {
         content(available, active) { locale -> state.setLocale(locale) }

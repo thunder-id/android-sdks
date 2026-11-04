@@ -12,6 +12,7 @@ import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDConfig
 import dev.thunderid.android.User
 import dev.thunderid.android.UserProfile
+import dev.thunderid.android.api.management.Project
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import dev.thunderid.compose.management.ResourceInvalidator
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +56,23 @@ class ThunderIDState(
     private val schemaMutex = Mutex()
 
     val isSignedIn: Boolean get() = user != null
+
+    /**
+     * The project the app is working in, chosen with [setCurrentProject] or a
+     * [dev.thunderid.compose.components.management.ProjectSwitcher]. It is client-side context only: it signs
+     * nothing in and changes no token. [dev.thunderid.compose.components.management.ApplicationList] and
+     * [dev.thunderid.compose.components.management.AgentList] list the project's resources, and
+     * [dev.thunderid.compose.components.management.ApplicationCreate] and
+     * [dev.thunderid.compose.components.management.AgentCreate] create in it when the app passes no organization
+     * unit. A project's id is not an organization unit id. Held in memory for the life of this state.
+     */
+    val currentProject: Project? get() = currentProjectState
+    private var currentProjectState by mutableStateOf<Project?>(null)
+
+    /** Makes [project] the current project, or clears it with `null`. */
+    fun setCurrentProject(project: Project?) {
+        currentProjectState = project
+    }
 
     /** Coordinates refetching between the management queries and mutations under this state. */
     val invalidator = ResourceInvalidator()

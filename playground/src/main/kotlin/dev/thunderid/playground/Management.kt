@@ -11,23 +11,25 @@ import dev.thunderid.android.ThunderIDEndpoints
 import dev.thunderid.android.ThunderIDFetcher
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.ThunderIDHttpResponse
-import dev.thunderid.android.management.Agent
-import dev.thunderid.android.management.Application
-import dev.thunderid.android.management.BasicAgent
-import dev.thunderid.android.management.BasicApplication
-import dev.thunderid.android.management.Group
-import dev.thunderid.android.management.GroupMember
-import dev.thunderid.android.management.GroupMemberType
-import dev.thunderid.android.management.InboundAuthConfig
-import dev.thunderid.android.management.ManagedUser
-import dev.thunderid.android.management.MembershipGroup
-import dev.thunderid.android.management.OAuth2Config
-import dev.thunderid.android.management.RoleAssigneeType
-import dev.thunderid.android.management.RoleAssignment
-import dev.thunderid.android.management.RoleResourcePermissions
-import dev.thunderid.android.management.RoleSummary
-import dev.thunderid.compose.components.admin.AdminOption
-import dev.thunderid.compose.components.admin.IdentityCandidate
+import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.Application
+import dev.thunderid.android.api.management.BasicAgent
+import dev.thunderid.android.api.management.BasicApplication
+import dev.thunderid.android.api.management.Group
+import dev.thunderid.android.api.management.GroupMember
+import dev.thunderid.android.api.management.GroupMemberType
+import dev.thunderid.android.api.management.InboundAuthConfig
+import dev.thunderid.android.api.management.ManagedUser
+import dev.thunderid.android.api.management.MembershipGroup
+import dev.thunderid.android.api.management.OAuth2Config
+import dev.thunderid.android.api.management.Role
+import dev.thunderid.android.api.management.RoleAssigneeType
+import dev.thunderid.android.api.management.RoleAssignment
+import dev.thunderid.android.api.management.RoleResourcePermissions
+import dev.thunderid.android.api.management.RoleSummary
+import dev.thunderid.compose.components.management.AdminOption
+import dev.thunderid.compose.components.management.IdentityCandidate
+import dev.thunderid.compose.components.management.PermissionCandidate
 
 /**
  * A management collection and how the SDK addresses it. [override] reads the collection's entry in
@@ -109,10 +111,10 @@ val AdminPermissions =
         "system:user:view" to "UserList · UserDetails",
         "system:user" to "UserCreate · edit and delete users",
         "system:usertype:view" to "UserCreate type picker",
-        "system:group:view" to "GroupList · GroupMembers",
-        "system:group" to "GroupCreate · edit members",
-        "system:role:view" to "RoleList · RolePermissions · RoleAssignments",
-        "system:role" to "RoleCreate · assign roles",
+        "system:group:view" to "GroupList · GroupDetails · GroupMembers",
+        "system:group" to "GroupCreate · edit members · delete groups",
+        "system:role:view" to "RoleList · RoleDetails · RolePermissions · RoleAssignments",
+        "system:role" to "RoleCreate · assign roles · delete roles",
         "system:agent" to "AgentList · AgentDetails · AgentCreate",
         "system" to "ApplicationList · ApplicationDetails · ApplicationCreate (no narrower permission guards applications)",
     )
@@ -154,7 +156,29 @@ object AdminSamples {
             RoleResourcePermissions("rs-billing", listOf("invoices:read", "invoices:write")),
         )
 
+    val role =
+        Role(
+            id = "rol-viewer",
+            name = "Viewer",
+            ouId = "ou-root",
+            permissions = permissions,
+            description = "Read only",
+            ouHandle = "root",
+        )
+
     val resourceServerNames = mapOf("rs-system" to "System API", "rs-billing" to "Billing API")
+
+    /** The resource servers and permissions an editable RolePermissions story offers. */
+    val permissionCandidates =
+        listOf(
+            PermissionCandidate(
+                "rs-system",
+                "System API",
+                listOf("system:user:view", "system:user:manage", "system:group:view", "system:role:view"),
+            ),
+            PermissionCandidate("rs-billing", "Billing API", listOf("invoices:read", "invoices:write", "invoices:refund")),
+            PermissionCandidate("rs-reports", "Reports API", listOf("reports:view", "reports:export")),
+        )
 
     val assignments =
         listOf(

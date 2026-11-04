@@ -7,10 +7,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.thunderid.android.ThunderIDFetcher
-import dev.thunderid.android.management.AccountLifecycleAction
-import dev.thunderid.android.management.AccountLifecycleResult
-import dev.thunderid.android.management.AccountLifecycleSubjectKind
-import dev.thunderid.android.management.accountLifecycleActions
+import dev.thunderid.android.api.management.AccountLifecycleAction
+import dev.thunderid.android.api.management.AccountLifecycleResult
+import dev.thunderid.android.api.management.AccountLifecycleSubjectKind
+import dev.thunderid.android.api.management.accountLifecycleActions
 import kotlinx.coroutines.launch
 
 /** Cache key prefix of the administration flows the server configures. */

@@ -28,12 +28,17 @@ next time you run it. It is a development tool, not a sample: for a minimal inte
     `client.getGrantedPermissions()` and how many admin permissions the session holds.
 - **Components**: an explorer for the SDK's Compose components. Pick a component, switch stories,
   edit props in Controls, toggle a light or dark preview, and copy the Compose snippet generated
-  from the current props in Code. The **Admin** components (`GroupList`, `GroupMembers`, `GroupCreate`,
-  `RoleList`, `RolePermissions`, `RoleAssignments`, `RoleCreate`, `UserList`, `UserDetails`, `UserCreate`,
-  `AgentList`, `AgentDetails`, `AgentCreate`) each have a **Live** story that renders the connected
+  from the current props in Code. The **Admin** components (`GroupList`, `GroupDetails`, `GroupMembers`,
+  `GroupCreate`, `RoleList`, `RoleDetails`, `RolePermissions`, `RoleAssignments`, `RoleCreate`, `UserList`,
+  `UserDetails`, `UserCreate`, `AgentList`, `AgentDetails`, `AgentCreate`) each have a **Live** story that renders the connected
   component against the server, and **Base**, **Loading**, **Error** (and **Empty** for lists) stories that
   render the `Base*` variant with sample data. Picking a row in a live list story sets the ID its details
   story uses; the details stories also take the ID from Controls or from the Management checks.
+  `ProjectList`, `ProjectCreate`, `ProjectDetails`, `ProjectSwitcher`, `OrganizationUnitList`,
+  `OrganizationUnitCreate`, `OrganizationUnitDetails`, `SharingPolicies` and `DeviceGrant` each have
+  **Base**, **Live** and **Custom rendering** stories. The project picked in the live `ProjectSwitcher` story
+  scopes the live `ApplicationList` and `AgentList` stories, and the live `ApplicationCreate` and `AgentCreate`
+  stories create in it when no `ouId` is set.
 - **Session**: the signed-in user, an access token countdown, refresh and sign-out, the stored
   tokens (reveal and copy), the decoded access token claims, and session events. **Access** lists the
   granted permissions from `rememberGrantedPermissions()`, which admin components each one unlocks

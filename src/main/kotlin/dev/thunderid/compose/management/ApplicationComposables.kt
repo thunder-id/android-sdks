@@ -5,9 +5,9 @@ package dev.thunderid.compose.management
 
 import androidx.compose.runtime.Composable
 import dev.thunderid.android.ThunderIDFetcher
-import dev.thunderid.android.management.AdministrationMode
-import dev.thunderid.android.management.ApplicationQueryKeys
-import dev.thunderid.android.management.RegenerateClientSecretResult
+import dev.thunderid.android.api.management.AdministrationMode
+import dev.thunderid.android.api.management.ApplicationQueryKeys
+import dev.thunderid.android.api.management.RegenerateClientSecretResult
 
 /**
  * Remembers a mutation that deletes an application, through its administration flow when

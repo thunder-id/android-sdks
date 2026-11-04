@@ -93,11 +93,19 @@ data class TokenResponse(
     val scope: String? = null,
 )
 
+/**
+ * Options for a redirect-mode sign-in.
+ *
+ * @property organizationUnitId Bounds the sign-in to this organization unit: the user signs in to it at
+ * `{baseUrl}/ou/{organizationUnitId}/oauth2/authorize`, and the code is redeemed at the unit's token
+ * endpoint. When sign-in runs on a backend, it goes to the backend's sign-in endpoint as `ouId`.
+ */
 data class SignInOptions(
     val prompt: String? = null,
     val loginHint: String? = null,
     val fidp: String? = null,
     val extra: Map<String, Any> = emptyMap(),
+    val organizationUnitId: String? = null,
 )
 
 data class SignUpOptions(
@@ -124,9 +132,14 @@ data class EmbeddedSignInPayload(
     val challengeToken: String? = null,
 )
 
+/**
+ * @property organizationUnitId Bounds an `AUTHENTICATION` flow to this organization unit. It is sent as
+ * `ouId` on the request that starts the flow, never on a continuation.
+ */
 data class EmbeddedFlowRequestConfig(
     val applicationId: String,
     val flowType: FlowType = FlowType.AUTHENTICATION,
+    val organizationUnitId: String? = null,
 )
 
 enum class FlowType(
@@ -136,6 +149,9 @@ enum class FlowType(
     REGISTRATION("REGISTRATION"),
     PASSWORD_RECOVERY("PASSWORD_RECOVERY"),
     INVITED_USER_REGISTRATION("INVITED_USER_REGISTRATION"),
+
+    /** The server's device authorization flow, which a signed-in user runs to approve a device. */
+    DEVICE_GRANT("DEVICE_GRANT"),
 }
 
 data class EmbeddedFlowResponse(
@@ -148,6 +164,8 @@ data class EmbeddedFlowResponse(
     val failureReason: String? = null,
     val challengeToken: String? = null,
     val error: FlowError? = null,
+    /** The signed assertion a terminally failed flow returns, which a `DEVICE_GRANT` flow relays to the server. */
+    val errorAssertion: String? = null,
 )
 
 /** The flow execution `error` object, which replaced `failureReason`. */
@@ -191,6 +209,8 @@ data class FlowInput(
     @SerializedName("identifier") val name: String,
     val type: String? = null,
     val required: Boolean? = null,
+    /** The values a `SELECT` input accepts, such as the organization units a Resolve OU step offers. */
+    val options: List<String>? = null,
 )
 
 data class FlowMeta(

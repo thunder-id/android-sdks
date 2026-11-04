@@ -3,7 +3,7 @@
 
 package dev.thunderid.android
 
-import dev.thunderid.android.auth.FlowExecutionClient
+import dev.thunderid.android.api.auth.FlowExecutionClient
 import dev.thunderid.android.http.HttpClient
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -101,7 +101,7 @@ class ThunderIDClientTest {
     @Test
     fun `PKCEManager generates S256 challenge`() {
         val manager =
-            dev.thunderid.android.auth
+            dev.thunderid.android.api.auth
                 .PKCEManager()
         val (verifier, challenge) = manager.generate()
         assertTrue(verifier.isNotEmpty())
@@ -116,7 +116,7 @@ class ThunderIDClientTest {
     @Test
     fun `PKCEManager clears verifier`() {
         val manager =
-            dev.thunderid.android.auth
+            dev.thunderid.android.api.auth
                 .PKCEManager()
         manager.generate()
         assertNotNull(manager.codeVerifier)

@@ -69,12 +69,14 @@ internal class BackendClient(
     fun signInUrl(
         redirectUri: String,
         challenge: String,
+        organizationUnitId: String? = null,
     ): String {
         val query =
-            listOf(
+            listOfNotNull(
                 "redirect_uri" to redirectUri,
                 "code_challenge" to challenge,
                 "code_challenge_method" to "S256",
+                organizationUnitId?.let { "ouId" to it },
             ).joinToString("&") { (name, value) -> "$name=${encode(value)}" }
         return "${endpoints.signIn}${if (endpoints.signIn.contains('?')) "&" else "?"}$query"
     }
@@ -86,9 +88,11 @@ internal class BackendClient(
     suspend fun startSession(
         code: String,
         verifier: String,
+        keepOnFailure: Boolean = false,
     ): BackendSession {
-        // A new sign-in replaces whatever this client held before.
-        clear()
+        // A new sign-in replaces whatever this client held before. A switch to another organization unit
+        // replaces it only once the new session has started, so a failed switch leaves it as it was.
+        if (!keepOnFailure) clear()
         val body = Gson().toJson(mapOf("session_code" to code, "code_verifier" to verifier))
         val response = call("POST", endpoints.session, body)
         if (response.statusCode !in 200..299) {
@@ -103,6 +107,7 @@ internal class BackendClient(
         if (started == null || !started.isSignedIn || handle.isNullOrEmpty()) {
             throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "The backend returned no session")
         }
+        if (keepOnFailure) clear()
         handles.save(handle)
         wasSignedIn = true
         sessionMutex.withLock {

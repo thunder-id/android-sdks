@@ -64,6 +64,12 @@ data class ThunderIDHttpConfig(
  * @property configurationVersions Defaults to `{baseUrl}/configuration-versions`.
  * @property import Defaults to `{baseUrl}/import`.
  * @property export Defaults to `{baseUrl}/export`.
+ * @property credentialConfigurations Defaults to `{baseUrl}/openid4vci/credential-configurations`.
+ * @property presentationDefinitions Defaults to `{baseUrl}/openid4vp/presentation-definitions`.
+ * @property clientRegistrations Defaults to `{baseUrl}/oauth2/dcr/register`. A registration is addressed as
+ * `{clientRegistrations}/{clientId}`.
+ * @property projects Defaults to `{baseUrl}/projects`.
+ * @property authorizationDetailTypes Defaults to `{baseUrl}/authorization-detail-types`.
  * @property backend The app backend's auth endpoints. Setting them hands sign-in to a backend the
  * application owns, which keeps the tokens. It names the application's own backend, not a ThunderID
  * endpoint. See [ThunderIDBackendEndpoints].
@@ -91,4 +97,9 @@ data class ThunderIDEndpoints(
     val configurationVersions: String? = null,
     val import: String? = null,
     val export: String? = null,
+    val credentialConfigurations: String? = null,
+    val presentationDefinitions: String? = null,
+    val clientRegistrations: String? = null,
+    val projects: String? = null,
+    val authorizationDetailTypes: String? = null,
 )

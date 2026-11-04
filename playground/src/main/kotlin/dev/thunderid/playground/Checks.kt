@@ -21,16 +21,22 @@ import dev.thunderid.android.EmbeddedSignInPayload
 import dev.thunderid.android.FlowComponent
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.ThunderIDHttpRequest
-import dev.thunderid.android.auth.FederatedAuthSession
-import dev.thunderid.android.management.AccessStatusValue
-import dev.thunderid.android.management.AccountLifecycleSubjectKind
-import dev.thunderid.android.management.AdministrationFlowConfigKey
-import dev.thunderid.android.management.GroupMemberType
-import dev.thunderid.android.management.NotificationChannel
-import dev.thunderid.android.management.RoleAssigneeType
-import dev.thunderid.android.management.accountLifecycleActions
-import dev.thunderid.android.management.getTokenPermissions
-import dev.thunderid.android.management.hasPermission
+import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
+import dev.thunderid.android.api.account.OrganizationUnitScope
+import dev.thunderid.android.api.auth.CIBAInitiateOptions
+import dev.thunderid.android.api.auth.FederatedAuthSession
+import dev.thunderid.android.api.auth.OrganizationUnitSwitchResult
+import dev.thunderid.android.api.auth.SwitchOrganizationUnitOptions
+import dev.thunderid.android.api.auth.customTabBrowser
+import dev.thunderid.android.api.management.AccessStatusValue
+import dev.thunderid.android.api.management.AccountLifecycleSubjectKind
+import dev.thunderid.android.api.management.AdministrationFlowConfigKey
+import dev.thunderid.android.api.management.GroupMemberType
+import dev.thunderid.android.api.management.NotificationChannel
+import dev.thunderid.android.api.management.RoleAssigneeType
+import dev.thunderid.android.api.management.accountLifecycleActions
+import dev.thunderid.android.api.management.getTokenPermissions
+import dev.thunderid.android.api.management.hasPermission
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.i18n.DefaultStrings
 import dev.thunderid.compose.i18n.ThunderIDI18n
@@ -75,7 +81,23 @@ val CheckDefs =
         CheckDef("refresh", "Session", "Token refresh", "getAccessToken() · auto refresh"),
         CheckDef("storage", "Session", "Secure token storage", "EncryptedStorageAdapter"),
         CheckDef("user", "Session", "User info", "client.getUser()"),
-        CheckDef("orgs", "Session", "Organizations", "organizations()"),
+        CheckDef("orgs", "Session", "Organization units", "getAccessibleOrganizationUnits() · getCurrentOrganizationUnit()"),
+        CheckDef(
+            "ouSwitch",
+            "Session",
+            "Switch organization unit",
+            "switchOrganizationUnit() · customTabBrowser()",
+            interactive = true,
+        ),
+        CheckDef("par", "Authentication", "Pushed authorization requests", "signIn(options) · /oauth2/par"),
+        CheckDef("ciba", "Authentication", "Backchannel authentication (CIBA)", "initiateCIBA() · pollCIBA()", interactive = true),
+        CheckDef(
+            "deviceGrant",
+            "Authentication",
+            "Device authorization",
+            "startDeviceAuthorization() · verifyDeviceCode()",
+            interactive = true,
+        ),
         CheckDef("endpoints", "Endpoints", "Management endpoints", "ThunderIDConfig.endpoints · ThunderIDFetcher"),
         CheckDef("groups", "Management", "Groups", "client.groups.list() · get()"),
         CheckDef("groupMembers", "Management", "Group members", "client.groups.listMembers()"),
@@ -107,7 +129,20 @@ val CheckDefs =
             "operations",
             "Management",
             "Server configuration and gateways",
-            "client.serverConfig · gateways · variables · secrets · configurationVersions",
+            "client.serverConfig · gateways (master) · variables · secrets · configurationVersions · " +
+                "credentialConfigurations · presentationDefinitions",
+        ),
+        CheckDef(
+            "sharing",
+            "Management",
+            "Role and flow sharing, groups by path",
+            "client.roles · flows: listSharingPolicies() · getOverlayRules() · flows.getVariables() · groups.listByPath()",
+        ),
+        CheckDef(
+            "projects",
+            "Management",
+            "Projects and authorization details types",
+            "client.projects · authorizationDetailTypes · getSupportedAuthorizationDetailsTypes()",
         ),
         CheckDef("theme", "UI", "Theming and dark mode", "MaterialTheme · Material 3"),
         CheckDef("i18n", "UI", "Translations", "ThunderIDI18n"),
@@ -239,7 +274,11 @@ class ChecksController(
             "refresh" -> tokenRefresh(state)
             "storage" -> secureStorage()
             "user" -> userInfo(state)
-            "orgs" -> unavailable("The Android SDK has no organizations API. Only ThunderIDConfig.organizationHandle exists.")
+            "orgs" -> organizationUnitsOfUser(state)
+            "ouSwitch" -> switchOrganizationUnit(state, interactive)
+            "par" -> pushedAuthorization(state)
+            "ciba" -> ciba(state, interactive)
+            "deviceGrant" -> deviceGrant(state, interactive)
             "endpoints" -> endpoints(state)
             "groups" -> management(state) { groups(state) }
             "groupMembers" -> management(state) { groupMembers(state) }
@@ -258,6 +297,8 @@ class ChecksController(
             "lifecycle" -> management(state) { lifecycle(state) }
             "platform" -> management(state) { platform(state) }
             "operations" -> management(state) { operations(state) }
+            "sharing" -> management(state) { sharing(state) }
+            "projects" -> management(state) { projects(state) }
             "theme" -> theme(scheme)
             "i18n" -> translations()
             else -> fail("Unknown check")
@@ -438,6 +479,85 @@ class ChecksController(
         return pass("sub=${user.sub}, ${user.claims.size} claims, $profileNote")
     }
 
+    private suspend fun organizationUnitsOfUser(state: ThunderIDState): CheckResult {
+        if (!state.isSignedIn) return fail("Not signed in. Sign in first.")
+        val page = state.client.getAccessibleOrganizationUnits(AccessibleOrganizationUnitsOptions(limit = 10))
+        val siblings =
+            state.client.getAccessibleOrganizationUnits(AccessibleOrganizationUnitsOptions(OrganizationUnitScope.SIBLINGS))
+        val current = state.client.getCurrentOrganizationUnit()
+        return pass(
+            "${page.totalResults} accessible, ${siblings.totalResults} siblings, current=${page.current}, " +
+                "session unit=${current?.handle ?: current?.id ?: "none in claims"}",
+        )
+    }
+
+    private suspend fun switchOrganizationUnit(
+        state: ThunderIDState,
+        interactive: Boolean,
+    ): CheckResult {
+        if (!state.isSignedIn) return fail("Not signed in. Sign in first.")
+        val page = state.client.getAccessibleOrganizationUnits()
+        val target =
+            page.organizationUnits.firstOrNull { it.id != page.current }
+                ?: return unavailable("The user can access only one organization unit")
+        if (!interactive) return idle("Ready: tap to switch to ${target.handle ?: target.id}")
+        val browser = if (PlaygroundSettings.clientId.isNotBlank() || state.client.isBackendMode()) customTabBrowser(context) else null
+        val options = SwitchOrganizationUnitOptions(browser = browser, applicationId = PlaygroundSettings.applicationId.ifBlank { null })
+        return when (val result = state.client.switchOrganizationUnit(target.id, options)) {
+            is OrganizationUnitSwitchResult.Switched -> {
+                state.refresh()
+                pass("Switched to ${target.handle ?: target.id}")
+            }
+
+            is OrganizationUnitSwitchResult.SignInRequired -> {
+                idle(
+                    "The flow needs the user (${result.response.data
+                        ?.inputs
+                        ?.size ?: 0} inputs); the session is unchanged",
+                )
+            }
+        }
+    }
+
+    private suspend fun pushedAuthorization(state: ThunderIDState): CheckResult {
+        if (state.client.isBackendMode()) return unavailable("Sign-in runs on a backend")
+        if (PlaygroundSettings.clientId.isBlank()) return fail("THUNDERID_CLIENT_ID is not set in config.properties")
+        val url = state.client.signIn()
+        return if (url.contains("request_uri=")) {
+            pass("Pushed: the authorization URL carries only a request_uri")
+        } else {
+            pass("Not pushed: neither pushedAuthorizationRequests nor the server's metadata asks for it")
+        }
+    }
+
+    private suspend fun ciba(
+        state: ThunderIDState,
+        interactive: Boolean,
+    ): CheckResult {
+        if (state.client.isBackendMode()) return unavailable("Sign-in runs on a backend")
+        if (PlaygroundSettings.clientId.isBlank()) return fail("THUNDERID_CLIENT_ID is not set in config.properties")
+        val hint = state.user?.username ?: state.user?.email
+        if (!interactive || hint == null) return idle("Sign in, then tap to start a backchannel request for the same user")
+        val started = state.client.initiateCIBA(CIBAInitiateOptions(loginHint = hint, bindingMessage = "Playground"))
+        EventLog.info("ciba:started", "expires in ${started.expiresIn}s, approve it on the other device", source = "sdk")
+        state.client.pollCIBA(started.authReqId, started.interval)
+        state.refresh()
+        return pass("Approved: tokens stored")
+    }
+
+    private suspend fun deviceGrant(
+        state: ThunderIDState,
+        interactive: Boolean,
+    ): CheckResult {
+        if (state.client.isBackendMode()) return unavailable("Sign-in runs on a backend")
+        if (PlaygroundSettings.clientId.isBlank()) return fail("THUNDERID_CLIENT_ID is not set in config.properties")
+        if (!interactive) return idle("Tap to start a device request and open its verification flow")
+        val authorization = state.client.startDeviceAuthorization()
+        EventLog.info("device:started", "user code ${authorization.userCode} at ${authorization.verificationUri}", source = "sdk")
+        val step = state.client.verifyDeviceCode(authorization.userCode, PlaygroundSettings.applicationId.ifBlank { null })
+        return pass("Device code ${authorization.userCode}: verification flow is ${step.flowStatus.name.lowercase()}")
+    }
+
     private fun theme(scheme: ColorScheme): CheckResult {
         val dark = scheme.background.luminance() < 0.5f
         val primary = String.format("#%06X", scheme.primary.toArgb() and 0xFFFFFF)
@@ -450,13 +570,48 @@ class ChecksController(
 
     private fun translations(): CheckResult {
         val i18n = ThunderIDI18n(bundles = PlaygroundBundles)
+        // A built-in locale: the SDK ships ja-JP strings, the admin ones included.
+        i18n.setLocale("ja-JP")
+        val builtIn = i18n.resolve("admin.roles.permissions.add")
+        // The app's bundle wins over the SDK's own fr-FR strings.
         i18n.setLocale("fr-FR")
-        val translated = i18n.resolve("signIn.button")
+        val overridden = i18n.resolve("signUp.button")
+        // es-ES is not built in: the app's bundle supplies a few keys and the rest fall back to English.
+        i18n.setLocale("es-ES")
+        val appOnly = i18n.resolve("signIn.button")
         val fallback = i18n.resolve("signIn.title")
+        val untranslated =
+            ThunderIDI18n.BUILT_IN_LOCALES.drop(1).filter { locale ->
+                ThunderIDI18n(language = locale).resolve("admin.roles.permissions.title") ==
+                    DefaultStrings.all["admin.roles.permissions.title"]
+            }
         return when {
-            translated != "Se connecter" -> fail("fr-FR signIn.button resolved to \"$translated\"")
-            fallback != DefaultStrings.all["signIn.title"] -> fail("Missing key did not fall back to English")
-            else -> pass("fr-FR: \"$translated\"; missing keys fall back to English")
+            builtIn == DefaultStrings.all["admin.roles.permissions.add"] -> {
+                fail("ja-JP fell back to English: \"$builtIn\"")
+            }
+
+            untranslated.isNotEmpty() -> {
+                fail("Not translated in ${untranslated.joinToString()}")
+            }
+
+            overridden != "Créer un compte" -> {
+                fail("The app bundle did not override fr-FR: \"$overridden\"")
+            }
+
+            appOnly != "Iniciar sesión" -> {
+                fail("es-ES signIn.button resolved to \"$appOnly\"")
+            }
+
+            fallback != DefaultStrings.all["signIn.title"] -> {
+                fail("Missing key did not fall back to English")
+            }
+
+            else -> {
+                pass(
+                    "${ThunderIDI18n.BUILT_IN_LOCALES.size} built-in locales (ja-JP: \"$builtIn\"); app bundles override them; " +
+                        "es-ES from the app, missing keys fall back to English",
+                )
+            }
         }
     }
 
@@ -654,9 +809,74 @@ class ChecksController(
         val variables = client.variables.list(limit = 5)
         val secrets = client.secrets.list(limit = 5)
         val versions = client.configurationVersions.list()
+        val master = gateways.firstOrNull()?.let { client.gateways.getMaster(it.id) }
+        val credentials = client.credentialConfigurations.list()
+        val presentations = client.presentationDefinitions.list()
         return pass(
             "${sections.size} config sections, ${gateways.size} gateways, ${variables.totalResults} variables, " +
-                "${secrets.totalResults} secrets, ${versions.size} configuration versions",
+                "${secrets.totalResults} secrets, ${versions.size} configuration versions, " +
+                "${master?.let { "master #${it.number}, " } ?: ""}${credentials.size} credential configurations, " +
+                "${presentations.size} presentation definitions",
+        )
+    }
+
+    private suspend fun sharing(state: ThunderIDState): CheckResult {
+        val client = state.client
+        val role =
+            client.roles
+                .list(limit = 1)
+                .roles
+                .firstOrNull()
+        val flow =
+            client.flows
+                .list(limit = 1)
+                .flows
+                .firstOrNull()
+        val unit =
+            client.organizationUnits
+                .list(limit = 1)
+                .organizationUnits
+                .firstOrNull()
+        val rolePolicies = role?.let { client.roles.listSharingPolicies(it.id, limit = 5) }
+        val flowPolicies = flow?.let { client.flows.listSharingPolicies(it.id, limit = 5) }
+        // A unit no policy reaches answers 404, which is an answer here, not a failure.
+        val overlay =
+            if (role != null && unit != null) runCatching { client.roles.getOverlayRules(role.id, unit.id) }.getOrNull() else null
+        val variables =
+            if (flow != null && unit != null) runCatching { client.flows.getVariables(flow.id, unit.id) }.getOrNull() else null
+        val groups = unit?.let { client.groups.listByPath(it.handle, limit = 5) }
+        return pass(
+            listOfNotNull(
+                role?.let { "role ${it.name}: ${rolePolicies?.totalResults ?: 0} sharing policies" },
+                unit?.let { "owned by ${it.handle}: ${overlay?.isOwned?.toString() ?: "not reached"}" },
+                flow?.let { "flow ${it.id}: ${flowPolicies?.totalResults ?: 0} sharing policies" },
+                variables?.let { "${it.values.size} variable overrides" },
+                unit?.let { "groups/tree/${it.handle}: ${groups?.totalResults ?: 0} groups" },
+            ).joinToString("; ").ifEmpty { "No roles, flows or organization units to read" },
+        )
+    }
+
+    private suspend fun projects(state: ThunderIDState): CheckResult {
+        val client = state.client
+        // Projects are served by the Control Plane only, and type discovery can be turned off on the server.
+        val projects = runCatching { client.projects.list(limit = 5) }
+        val types = runCatching { client.authorizationDetailTypes.list(limit = 5) }
+        val supported = runCatching { client.getSupportedAuthorizationDetailsTypes() }
+        if (projects.isFailure && types.isFailure && supported.isFailure) {
+            return fail("No projects or authorization details types answered: ${projects.exceptionOrNull()?.message}")
+        }
+        return pass(
+            listOf(
+                projects.fold({
+                    "${it.totalResults} projects${namesSuffix(
+                        it.projects.map { p ->
+                            p.handle
+                        },
+                    )}"
+                }) { "projects unavailable" },
+                types.fold({ "${it.totalResults} authorization details types" }) { "types unavailable" },
+                supported.fold({ "${it.size} requestable${namesSuffix(it.map { t -> t.type })}" }) { "discovery off" },
+            ).joinToString("; "),
         )
     }
 
@@ -739,7 +959,7 @@ class ChecksController(
 
     private companion object {
         // Checks that do not need an initialized SDK.
-        val OFFLINE_CHECKS = setOf("biometric", "deeplink", "storage", "orgs", "permissions", "theme", "i18n")
+        val OFFLINE_CHECKS = setOf("biometric", "deeplink", "storage", "permissions", "theme", "i18n")
 
         // Development only: the local ThunderID server uses a self-signed certificate.
         fun trustAll(connection: HttpsURLConnection) {

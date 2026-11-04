@@ -3,6 +3,8 @@
 
 package dev.thunderid.playground
 
+import dev.thunderid.compose.i18n.ThunderIDI18n
+
 /** A prop the Controls panel can edit. */
 sealed class Control(
     val name: String,
@@ -155,7 +157,13 @@ val ComponentSpecs: List<ComponentSpec> =
             id = "language",
             group = "Presentation",
             name = "LanguageSwitcher",
-            controls = listOf(Control.Choice("locales", listOf("en-US", "en-US fr-FR", "en-US fr-FR es-ES"))),
+            controls =
+                listOf(
+                    Control.Choice(
+                        "locales",
+                        listOf("en-US", "en-US fr-FR", "en-US fr-FR es-ES", ThunderIDI18n.BUILT_IN_LOCALES.joinToString(" ")),
+                    ),
+                ),
             defaults = mapOf("locales" to "en-US fr-FR es-ES"),
             stories =
                 listOf(
@@ -202,12 +210,14 @@ val ComponentSpecs: List<ComponentSpec> =
             id = "signin",
             group = "Flows",
             name = "SignIn",
-            controls = listOf(Control.Text("applicationId")),
-            defaults = mapOf("applicationId" to PlaygroundSettings.applicationId),
+            controls = listOf(Control.Text("applicationId"), Control.Text("organizationUnitId")),
+            defaults = mapOf("applicationId" to PlaygroundSettings.applicationId, "organizationUnitId" to ""),
             stories = listOf(Story("live", "Live flow", emptyMap())),
             code = { _, props ->
+                val unit = props.text("organizationUnitId")
                 "SignIn(\n    applicationId = ${quote(props.text("applicationId"))},\n" +
+                    (if (unit.isBlank()) "" else "    organizationUnitId = ${quote(unit)},\n") +
                     "    onComplete = { /* signed in */ },\n    onError = { message -> /* show message */ },\n)"
             },
         ),
-    ) + AdminComponentSpecs + CustomRenderSpecs
+    ) + AdminComponentSpecs + CustomRenderSpecs + OrganizationUnitSpecs + ProjectSpecs

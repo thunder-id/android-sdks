@@ -6,7 +6,7 @@ package dev.thunderid.android.token
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.ThunderIDErrorCode
 import dev.thunderid.android.TokenResponse
-import dev.thunderid.android.http.HttpClient
+import dev.thunderid.android.api.auth.OAuthClient
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -14,7 +14,7 @@ import kotlinx.coroutines.sync.withLock
  * Handles automatic access token refresh and atomic refresh token rotation (spec §11.7).
  */
 internal class TokenRefresher(
-    private val httpClient: HttpClient,
+    private val oauthClient: OAuthClient,
     private val tokenStore: TokenStore,
 ) {
     private val mutex = Mutex()
@@ -44,7 +44,8 @@ internal class TokenRefresher(
                     "refresh_token" to refreshToken,
                     "client_id" to clientId,
                 )
-            val response: TokenResponse = httpClient.post("/oauth2/token", body, requiresAuth = false)
+            // Form-encoded at the bare token endpoint: a refresh token from a bounded sign-in carries its unit.
+            val response: TokenResponse = oauthClient.requestToken(null, body, "The token refresh was refused")
             tokenStore.save(response)
             response
         }

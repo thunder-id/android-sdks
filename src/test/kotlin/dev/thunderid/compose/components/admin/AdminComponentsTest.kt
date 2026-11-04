@@ -138,6 +138,31 @@ class AdminComponentsTest {
     }
 
     @Test
+    fun `group members list candidates from the given organization unit`() {
+        assertEquals("ouId eq \"ou-1\"", groupMemberCandidateFilter("ou-1"))
+        assertNull(groupMemberCandidateFilter(null))
+        assertNull(groupMemberCandidateFilter(" "))
+    }
+
+    @Test
+    fun `group members surface a failed candidate load`() {
+        val failure = IllegalStateException("boom")
+        assertEquals(
+            i18n.translate("admin.users.list.error"),
+            groupMembersErrorMessage(i18n, null, null, failure, null),
+        )
+        assertEquals(
+            i18n.translate("admin.agents.list.error"),
+            groupMembersErrorMessage(i18n, null, null, null, failure),
+        )
+        assertEquals(
+            i18n.translate("admin.groups.members.error"),
+            groupMembersErrorMessage(i18n, failure, null, failure, failure),
+        )
+        assertNull(groupMembersErrorMessage(i18n, null, null, null, null))
+    }
+
+    @Test
     fun `admin test tags are stable`() {
         assertEquals("thunderid-admin-user-details-delete-confirm", adminTag("user-details", "delete", "confirm"))
         assertEquals("thunderid-admin-group-list", adminTag("group-list"))

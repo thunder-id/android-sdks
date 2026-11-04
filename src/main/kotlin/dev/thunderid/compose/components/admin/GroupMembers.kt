@@ -17,9 +17,11 @@ import dev.thunderid.android.management.AdministrationMode
 import dev.thunderid.android.management.GroupMember
 import dev.thunderid.android.management.GroupMemberInput
 import dev.thunderid.android.management.GroupMemberType
+import dev.thunderid.android.management.ManagementFilter
 import dev.thunderid.android.management.resolveAgentName
 import dev.thunderid.android.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.i18n.ThunderIDI18n
 import dev.thunderid.compose.management.GroupMembersInput
 import dev.thunderid.compose.management.rememberAddGroupMembers
 import dev.thunderid.compose.management.rememberGetAgents
@@ -131,6 +133,7 @@ fun BaseGroupMembers(
  * @param administrationMode How a member is removed: [AdministrationMode.FLOW] runs the membership removal flow
  *   the server configures, which can revoke grants and end sessions first. Defaults to
  *   [AdministrationMode.NATIVE], which calls the API directly.
+ * @param ouId Organization unit the users and agents offered for adding are listed from.
  * @param content Renders custom UI in place of the default table and picker. See [BaseGroupMembers].
  */
 @Composable
@@ -141,13 +144,16 @@ fun GroupMembers(
     administrationMode: AdministrationMode = AdministrationMode.NATIVE,
     title: String? = null,
     description: String? = null,
+    ouId: String? = null,
     content: (@Composable (GroupMembersState) -> Unit)? = null,
 ) {
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val members = rememberGetGroupMembers(groupId, limit = 100)
-    val users = rememberGetUsers(limit = 100, enabled = editable)
-    val agents = rememberGetAgents(limit = 100, enabled = editable)
+    // A new filter is a new query key, which starts with no data, so no candidate from the previous unit is offered.
+    val filter = groupMemberCandidateFilter(ouId)
+    val users = rememberGetUsers(limit = 100, filter = filter, enabled = editable)
+    val agents = rememberGetAgents(limit = 100, filter = filter, enabled = editable)
     val add = rememberAddGroupMembers()
     val remove = rememberRemoveGroupMembers(administrationMode = administrationMode)
     BaseGroupMembers(
@@ -170,9 +176,7 @@ fun GroupMembers(
             } else {
                 null
             },
-        error =
-            toManagementErrorMessage(i18n, members.error, "admin.groups.members.error")
-                ?: toManagementErrorMessage(i18n, add.error ?: remove.error, "admin.groups.members.update_error"),
+        error = groupMembersErrorMessage(i18n, members.error, add.error ?: remove.error, users.error, agents.error),
         isLoading = members.isLoading,
         isMutating = add.isLoading || remove.isLoading,
         onAdd =
@@ -194,3 +198,19 @@ fun GroupMembers(
         content = content,
     )
 }
+
+/** The filter [GroupMembers] lists its candidates with, `null` to list them from every organization unit. */
+internal fun groupMemberCandidateFilter(ouId: String?): String? = ouId?.let { ManagementFilter.equality("ouId", it) }
+
+/** The message [GroupMembers] shows for a failed load or update, including a failed load of the users and agents it offers. */
+internal fun groupMembersErrorMessage(
+    i18n: ThunderIDI18n,
+    membersError: Throwable?,
+    updateError: Throwable?,
+    usersError: Throwable?,
+    agentsError: Throwable?,
+): String? =
+    toManagementErrorMessage(i18n, membersError, "admin.groups.members.error")
+        ?: toManagementErrorMessage(i18n, updateError, "admin.groups.members.update_error")
+        ?: toManagementErrorMessage(i18n, usersError, "admin.users.list.error")
+        ?: toManagementErrorMessage(i18n, agentsError, "admin.agents.list.error")

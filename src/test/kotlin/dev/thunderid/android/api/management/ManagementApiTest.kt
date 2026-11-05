@@ -198,6 +198,61 @@ class ManagementApiTest {
         }
 
     @Test
+    fun `agent create sends the owner as an object`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            val client = client(recorder)
+            recorder.respond("""{"id":"ag-1","ouId":"ou","type":"default"}""")
+            val owner = AgentOwner(id = "jane@example.com", idType = AgentOwnerIdType.EMAIL, isLocal = false)
+
+            client.agents.create(CreateAgentRequest(ouId = "ou", type = "default", owner = owner))
+
+            @Suppress("UNCHECKED_CAST")
+            val body = Gson().fromJson(recorder.requests.single().body, Map::class.java) as Map<String, Any?>
+            assertEquals(mapOf("id" to "jane@example.com", "idType" to "email", "isLocal" to false), body["owner"])
+        }
+
+    @Test
+    fun `agent create leaves out the owner fields it was not given`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            val client = client(recorder)
+            recorder.respond("""{"id":"ag-1","ouId":"ou","type":"default"}""")
+
+            client.agents.create(CreateAgentRequest(ouId = "ou", type = "default", owner = AgentOwner(id = "usr-1")))
+
+            @Suppress("UNCHECKED_CAST")
+            val body = Gson().fromJson(recorder.requests.single().body, Map::class.java) as Map<String, Any?>
+            assertEquals(mapOf("id" to "usr-1"), body["owner"])
+        }
+
+    @Test
+    fun `agent reads parse the owner object`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            val client = client(recorder)
+            recorder.respond(
+                """{"id":"ag-1","ouId":"ou","type":"default",""" +
+                    """"owner":{"id":"jane@example.com","idType":"email","isLocal":false}}""",
+            )
+
+            val agent = client.agents.get("ag-1")
+
+            assertEquals("jane@example.com", agent.owner?.id)
+            assertEquals(AgentOwnerIdType.EMAIL, agent.owner?.idType)
+            assertEquals(false, agent.owner?.isLocal)
+        }
+
+    @Test
+    fun `agent reads leave the owner null when the agent has none`() =
+        runTest {
+            val recorder = RecordingFetcher()
+            recorder.respond("""{"id":"ag-1","ouId":"ou","type":"default"}""")
+
+            assertNull(client(recorder).agents.get("ag-1").owner)
+        }
+
+    @Test
     fun `agent reads take the name from display`() =
         runTest {
             val recorder = RecordingFetcher()

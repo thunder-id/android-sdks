@@ -69,6 +69,18 @@ dependencies {
     // The real org.json, so a unit test can send a flow request the SDK encodes with it.
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
+
+    // ktlint-cli 1.8.0 pulls in logback 1.3.16, which is affected by CVE-2026-1225,
+    // CVE-2026-9828 and CVE-2026-10532. Only the ktlint tool classpath is affected;
+    // the SDK artifact does not depend on logback.
+    constraints {
+        add("ktlint", "ch.qos.logback:logback-classic:1.5.38") {
+            because("CVE-2026-1225, CVE-2026-9828, CVE-2026-10532 in logback < 1.5.34")
+        }
+        add("ktlint", "ch.qos.logback:logback-core:1.5.38") {
+            because("CVE-2026-1225, CVE-2026-9828, CVE-2026-10532 in logback < 1.5.34")
+        }
+    }
 }
 
 afterEvaluate {

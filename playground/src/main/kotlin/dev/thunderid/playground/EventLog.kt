@@ -113,6 +113,8 @@ class RecordingStorageAdapter(
                 "thunder.id_token",
                 "thunder.token_expiry",
                 "thunder.scope",
+                "thunder.device_secret",
+                "thunder.flow_sessions",
             )
     }
 }

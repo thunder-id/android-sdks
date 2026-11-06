@@ -75,7 +75,8 @@ data class DeviceAuthorization(
  * @property browser Opens a sign-in URL in the browser and returns the URL the browser came back to.
  * Needed when sign-in runs through the browser: redirect mode, or a backend
  * ([dev.thunderid.android.ThunderIDEndpoints.backend]). [customTabBrowser] makes one from a Custom Tab.
- * Without it, the switch runs as an embedded sign-in flow.
+ * Outside backend mode a held device secret is exchanged first, and the browser opens only when that cannot
+ * switch. Without a browser, such a switch runs as an embedded sign-in flow.
  * @property applicationId The application whose `AUTHENTICATION` flow an embedded switch runs. Defaults to
  * `applicationId` in the configuration.
  * @property signInOptions Further authorization request parameters for a browser switch, such as `prompt`.

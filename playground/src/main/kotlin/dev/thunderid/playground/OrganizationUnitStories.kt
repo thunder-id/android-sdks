@@ -53,7 +53,7 @@ val OrganizationUnitSpecs: List<ComponentSpec> =
                         "    switchOptions = SwitchOrganizationUnitOptions(browser = customTabBrowser(context)),\n)"
                 } else {
                     "BaseOrganizationUnitSwitcher(\n    organizationUnits = units,\n    current = \"ou-2\",\n" +
-                        "    onSwitch = { unit -> /* switch */ },\n)"
+                        "    currentName = \"Acme OU 1\",\n    onSwitch = { unit -> /* switch */ },\n)"
                 }
             },
         ),
@@ -68,6 +68,7 @@ val OrganizationUnitSpecs: List<ComponentSpec> =
                 val head = if (story == "live") "OrganizationUnitSwitcher()" else "BaseOrganizationUnitSwitcher(units, current, onSwitch)"
                 """
                 |$head { switcher ->
+                |    Text(switcher.currentName ?: "No organization unit")
                 |    switcher.organizationUnits.forEach { unit ->
                 |        AssistChip(
                 |            onClick = { switcher.onSwitch(unit) },
@@ -118,6 +119,8 @@ fun OrganizationUnitStoryPreview(
             current = it.id
             onTap()
         },
+        // Names the current unit on pages that do not list it.
+        currentName = SAMPLE_UNITS.firstOrNull { it.id == current }?.name,
         modifier = modifier,
         limit = limit,
         offset = offset,
@@ -130,7 +133,12 @@ fun OrganizationUnitStoryPreview(
 @Composable
 private fun OrganizationUnitChips(switcher: OrganizationUnitSwitcherState) {
     Column {
-        ListItem(headlineContent = { Text("Organization units", style = MaterialTheme.typography.titleMedium) })
+        ListItem(
+            headlineContent = {
+                Text(switcher.currentName ?: "No organization unit", style = MaterialTheme.typography.titleMedium)
+            },
+            supportingContent = { Text("Current organization unit") },
+        )
         Row {
             switcher.organizationUnits.forEach { unit ->
                 val name = unit.name ?: unit.handle ?: unit.id

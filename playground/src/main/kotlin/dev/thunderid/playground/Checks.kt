@@ -86,7 +86,7 @@ val CheckDefs =
             "ouSwitch",
             "Session",
             "Switch organization unit",
-            "switchOrganizationUnit() · customTabBrowser()",
+            "switchOrganizationUnit() · device secret · customTabBrowser()",
             interactive = true,
         ),
         CheckDef("par", "Authentication", "Pushed authorization requests", "signIn(options) · /oauth2/par"),
@@ -500,13 +500,15 @@ class ChecksController(
         val target =
             page.organizationUnits.firstOrNull { it.id != page.current }
                 ?: return unavailable("The user can access only one organization unit")
-        if (!interactive) return idle("Ready: tap to switch to ${target.handle ?: target.id}")
+        // A sign-in with the device_sso scope stores a device secret, which switches with no browser.
+        val held = if (storage.find("device_secret") != null) "a device secret is held" else "no device secret"
+        if (!interactive) return idle("Ready: tap to switch to ${target.handle ?: target.id} ($held)")
         val browser = if (PlaygroundSettings.clientId.isNotBlank() || state.client.isBackendMode()) customTabBrowser(context) else null
         val options = SwitchOrganizationUnitOptions(browser = browser, applicationId = PlaygroundSettings.applicationId.ifBlank { null })
         return when (val result = state.client.switchOrganizationUnit(target.id, options)) {
             is OrganizationUnitSwitchResult.Switched -> {
                 state.refresh()
-                pass("Switched to ${target.handle ?: target.id}")
+                pass("Switched to ${target.handle ?: target.id} ($held)")
             }
 
             is OrganizationUnitSwitchResult.SignInRequired -> {

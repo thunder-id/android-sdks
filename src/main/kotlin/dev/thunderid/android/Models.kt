@@ -91,6 +91,8 @@ data class TokenResponse(
     @SerializedName("refresh_token") val refreshToken: String? = null,
     @SerializedName("id_token") val idToken: String? = null,
     val scope: String? = null,
+    /** Returned by a code exchange whose sign-in asked for the `device_sso` scope; switches organization units. */
+    @SerializedName("device_secret") val deviceSecret: String? = null,
 )
 
 /**
@@ -166,6 +168,21 @@ data class EmbeddedFlowResponse(
     val error: FlowError? = null,
     /** The signed assertion a terminally failed flow returns, which a `DEVICE_GRANT` flow relays to the server. */
     val errorAssertion: String? = null,
+    /** The SSO sessions the step started. The client keeps them for a later organization unit switch. */
+    val sessionData: List<FlowSessionData>? = null,
+    /** The flow identifiers of the SSO sessions the step ended. */
+    val clearedSessions: List<String>? = null,
+)
+
+/**
+ * An SSO session an app-native flow step started.
+ *
+ * @property expiresIn Seconds until the session's absolute timeout. `null` when the server sets none.
+ */
+data class FlowSessionData(
+    val flowIdentifier: String? = null,
+    val sessionHandle: String? = null,
+    val expiresIn: Long? = null,
 )
 
 /** The flow execution `error` object, which replaced `failureReason`. */

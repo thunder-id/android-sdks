@@ -56,6 +56,7 @@ import dev.thunderid.android.token.JWKSCache
 import dev.thunderid.android.token.TokenRefresher
 import dev.thunderid.android.token.TokenStore
 import dev.thunderid.android.token.TokenValidator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -333,6 +334,13 @@ class ThunderIDClient internal constructor(
     suspend fun signIn(
         payload: EmbeddedSignInPayload,
         request: EmbeddedFlowRequestConfig,
+    ): EmbeddedFlowResponse = executeSignInFlow(payload, request, sessionData = null)
+
+    /** Runs one sign-in flow step. [sessionData] goes on the request that starts the flow. */
+    private suspend fun executeSignInFlow(
+        payload: EmbeddedSignInPayload,
+        request: EmbeddedFlowRequestConfig,
+        sessionData: List<FlowSessionData>?,
     ): EmbeddedFlowResponse {
         requireInitialized()
         refuseOnBackend("Embedded sign-in")
@@ -345,9 +353,16 @@ class ThunderIDClient internal constructor(
                     val unit = request.organizationUnitId.takeIf { request.flowType == FlowType.AUTHENTICATION }
                     boundedFlowInProgress = unit != null
                     mapOrganizationUnitRefusal(unit) {
-                        flowClient!!.initiate(request.applicationId, request.flowType, attestationToken(), unit)
+                        flowClient!!.initiate(
+                            request.applicationId,
+                            request.flowType,
+                            attestationToken(),
+                            unit,
+                            sessionData = sessionData,
+                        )
                     }
                 }
+            tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
             establishSessionIfNeeded(response)
             response
         } finally {
@@ -558,12 +573,18 @@ class ThunderIDClient internal constructor(
     /**
      * Signs in again bounded to organization unit [ouId]. The server reuses the SSO session when the user can
      * sign in there, so normally no credentials are asked. On success the client replaces its tokens (the
-     * refresh token is bound to the unit) and reads the user again. On failure the previous session stays as
-     * it was.
+     * refresh token is bound to the unit), keeps the device secret and the flow sessions, and reads the user
+     * again. On failure the previous session stays as it was.
      *
-     * With [SwitchOrganizationUnitOptions.browser], or when sign-in runs on a backend, the switch is a redirect
-     * sign-in through the browser. Otherwise it runs the application's `AUTHENTICATION` flow in embedded mode,
-     * which returns [OrganizationUnitSwitchResult.SignInRequired] when the flow needs the user.
+     * The switch takes the first path that applies:
+     * - When sign-in runs on a backend, a redirect sign-in through [SwitchOrganizationUnitOptions.browser].
+     * - With a device secret from a `device_sso` sign-in and a `clientId`, an exchange of the secret at
+     *   `{baseUrl}/ou/{ouId}/oauth2/token`, with no browser. A secret refused with `invalid_request` or
+     *   `invalid_grant` is dropped, and any refusal but an unavailable unit goes on to the next path.
+     * - With [SwitchOrganizationUnitOptions.browser], a redirect sign-in through the browser.
+     * - Otherwise the application's `AUTHENTICATION` flow in embedded mode, presenting the SSO session handles
+     *   kept from earlier flow steps. It returns [OrganizationUnitSwitchResult.SignInRequired] when the flow
+     *   needs the user.
      *
      * @throws IAMException [ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE] when the unit does not exist
      * or the application cannot be used from it; the server does not tell the two apart.
@@ -574,33 +595,44 @@ class ThunderIDClient internal constructor(
     ): OrganizationUnitSwitchResult {
         val cfg = requireConfig()
         requireUnitId(ouId)
-        if (backend != null || options.browser != null) {
-            val browser =
-                options.browser
-                    ?: throw IAMException(
-                        ThunderIDErrorCode.INVALID_CONFIGURATION,
-                        "Switching through the backend opens the browser: pass SwitchOrganizationUnitOptions.browser",
-                    )
-            val url = signIn(options.signInOptions.copy(organizationUnitId = ouId))
-            val callback =
+        if (backend != null) return OrganizationUnitSwitchResult.Switched(switchThroughBrowser(ouId, options))
+        var exchangeFailure: Exception? = null
+        val secret = tokenStore?.deviceSecret()
+        if (secret != null && !cfg.clientId.isNullOrEmpty()) {
+            val tokens =
                 try {
-                    browser(url)
-                } catch (e: Throwable) {
-                    // Dismissed or failed: forget the switch, so a later callback is not redeemed for it.
-                    pendingOrganizationUnitId = null
-                    pkceManager.clearVerifier()
+                    redeemDeviceSecret(cfg, ouId, secret)
+                } catch (e: CancellationException) {
                     throw e
+                } catch (e: Exception) {
+                    // An unavailable unit fails every path; any other refusal goes on as if no secret were held.
+                    if ((e as? IAMException)?.code == ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE) throw e
+                    exchangeFailure = e
+                    null
                 }
-            return OrganizationUnitSwitchResult.Switched(completeRedirect(callback, switching = true))
+            if (tokens != null) {
+                tokenStore!!.replace(tokens)
+                currentUser = null
+                return OrganizationUnitSwitchResult.Switched(getUser())
+            }
         }
-        val applicationId =
-            options.applicationId ?: cfg.applicationId
-                ?: throw IAMException(
+        if (options.browser != null) return OrganizationUnitSwitchResult.Switched(switchThroughBrowser(ouId, options))
+        val applicationId = options.applicationId ?: cfg.applicationId
+        if (applicationId == null) {
+            // With no path left, the exchange's refusal says more than the missing configuration.
+            throw exchangeFailure
+                ?: IAMException(
                     ThunderIDErrorCode.INVALID_CONFIGURATION,
-                    "An embedded switch needs applicationId, or SwitchOrganizationUnitOptions.browser for a redirect switch",
+                    "An embedded switch needs applicationId, a device secret, or SwitchOrganizationUnitOptions.browser",
                 )
+        }
         val response =
-            signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, ouId))
+            executeSignInFlow(
+                EmbeddedSignInPayload(),
+                EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, ouId),
+                // The kept session handles let the server reuse the SSO session without its cookie.
+                sessionData = tokenStore?.flowSessions(),
+            )
         return when (response.flowStatus) {
             FlowStatus.COMPLETE -> {
                 OrganizationUnitSwitchResult.Switched(getUser())
@@ -618,6 +650,61 @@ class ThunderIDClient internal constructor(
                 OrganizationUnitSwitchResult.SignInRequired(response)
             }
         }
+    }
+
+    /** Switches with a redirect sign-in bounded to [ouId], opened through [SwitchOrganizationUnitOptions.browser]. */
+    private suspend fun switchThroughBrowser(
+        ouId: String,
+        options: SwitchOrganizationUnitOptions,
+    ): User {
+        val browser =
+            options.browser
+                ?: throw IAMException(
+                    ThunderIDErrorCode.INVALID_CONFIGURATION,
+                    "Switching through the backend opens the browser: pass SwitchOrganizationUnitOptions.browser",
+                )
+        val url = signIn(options.signInOptions.copy(organizationUnitId = ouId))
+        val callback =
+            try {
+                browser(url)
+            } catch (e: Throwable) {
+                // Dismissed or failed: forget the switch, so a later callback is not redeemed for it.
+                pendingOrganizationUnitId = null
+                pkceManager.clearVerifier()
+                throw e
+            }
+        return completeRedirect(callback, switching = true)
+    }
+
+    /**
+     * Exchanges the device secret at organization unit [ouId]'s token endpoint (RFC 8693), which signs the user
+     * in to the unit from the SSO session, and validates the ID token it returns. A secret the server refuses as
+     * unusable (expired, another user's, revoked) is dropped.
+     */
+    private suspend fun redeemDeviceSecret(
+        cfg: ThunderIDConfig,
+        ouId: String,
+        secret: String,
+    ): TokenResponse {
+        val form =
+            mapOf(
+                "grant_type" to "urn:ietf:params:oauth:grant-type:token-exchange",
+                "subject_token" to secret,
+                "subject_token_type" to "urn:ietf:params:oauth:token-type:jwt",
+                "client_id" to requireClientId(cfg),
+                "scope" to cfg.scopes.joinToString(" "),
+            )
+        val response =
+            try {
+                oauthClient!!.requestToken(ouId, form, "The device secret exchange was refused")
+            } catch (e: IAMException) {
+                when (e.serverError?.code) {
+                    "invalid_request", "invalid_grant" -> tokenStore?.removeDeviceSecret()
+                }
+                throw e
+            }
+        response.idToken?.let { tokenValidator?.validate(it, null) }
+        return response
     }
 
     // MARK: - Backchannel and device authorization
@@ -832,6 +919,7 @@ class ThunderIDClient internal constructor(
             } else {
                 flowClient!!.initiate(appId, request?.flowType ?: FlowType.REGISTRATION, attestationToken())
             }
+        tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
         establishSessionIfNeeded(response)
         return response
     }

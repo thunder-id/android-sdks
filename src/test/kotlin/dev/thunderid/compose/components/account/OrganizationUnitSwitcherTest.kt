@@ -11,6 +11,7 @@ import dev.thunderid.android.User
 import dev.thunderid.android.api.account.AccessibleOrganizationUnit
 import dev.thunderid.android.api.account.AccessibleOrganizationUnits
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
+import dev.thunderid.android.api.account.CurrentOrganizationUnit
 import dev.thunderid.android.api.account.OrganizationUnitScope
 import dev.thunderid.android.api.auth.OrganizationUnitSwitchResult
 import dev.thunderid.compose.i18n.DefaultStrings
@@ -42,7 +43,8 @@ class OrganizationUnitSwitcherTest {
             current = unit.id
             OrganizationUnitSwitchResult.Switched(User(mapOf("sub" to "u1", "ouId" to unit.id)))
         },
-    ) = OrganizationUnitSwitcherController(i18n, scope, limit, load, switch)
+        session: suspend () -> CurrentOrganizationUnit? = { null },
+    ) = OrganizationUnitSwitcherController(i18n, scope, limit, load, switch, session)
 
     private fun OrganizationUnitSwitcherController.render() = state(onPageChange = {}, onSwitch = {})
 
@@ -166,11 +168,91 @@ class OrganizationUnitSwitcherTest {
     }
 
     @Test
+    fun `names the current unit from the page, else from the session when it is the same unit`() =
+        runTest {
+            val listed = controller()
+            listed.reload()
+            assertEquals("Acme", listed.render().currentName)
+
+            val offPage =
+                controller(
+                    load = { AccessibleOrganizationUnits(current, listOf(beta), totalResults = 12, count = 1) },
+                    session = { CurrentOrganizationUnit("ou-1", "acme", "Acme Inc") },
+                )
+            offPage.reload()
+            assertEquals("ou-1", offPage.render().current)
+            assertEquals("Acme Inc", offPage.render().currentName)
+
+            val otherUnit =
+                controller(
+                    load = { AccessibleOrganizationUnits(current, listOf(beta)) },
+                    session = { CurrentOrganizationUnit("ou-9", name = "Nine") },
+                )
+            otherUnit.reload()
+            assertNull(otherUnit.render().currentName)
+        }
+
+    @Test
+    fun `takes the current unit from the session when the page names none`() =
+        runTest {
+            val switcher =
+                controller(
+                    load = { AccessibleOrganizationUnits(null, listOf(acme, beta)) },
+                    session = { CurrentOrganizationUnit("ou-2", "beta") },
+                )
+
+            switcher.reload()
+
+            assertEquals("ou-2", switcher.render().current)
+            assertEquals("Beta", switcher.render().currentName)
+            assertNull(switcher.switchTo(beta))
+            assertTrue(switches.isEmpty())
+        }
+
+    @Test
+    fun `a session that cannot be read leaves the current unit to the page`() =
+        runTest {
+            val switcher = controller(session = { throw IAMException(ThunderIDErrorCode.SERVER_ERROR, "boom") })
+
+            switcher.reload()
+
+            assertEquals("Acme", switcher.render().currentName)
+            assertNull(switcher.render().error)
+        }
+
+    private fun fieldState(
+        currentName: String? = null,
+        isLoading: Boolean = false,
+        switchingId: String? = null,
+    ) = OrganizationUnitSwitcherState(
+        organizationUnits = listOf(acme, beta),
+        current = "ou-1",
+        isLoading = isLoading,
+        error = null,
+        limit = 10,
+        offset = 0,
+        totalResults = 2,
+        onPageChange = {},
+        switchingId = switchingId,
+        onSwitch = {},
+        currentName = currentName,
+    )
+
+    @Test
+    fun `the field shows the unit being switched to, the current unit, the loading text or the placeholder`() {
+        assertEquals("Switching to Beta…", organizationUnitFieldText(i18n, fieldState(currentName = "Acme", switchingId = "ou-2")))
+        assertEquals("Switching to ou-7…", organizationUnitFieldText(i18n, fieldState(switchingId = "ou-7")))
+        assertEquals("Acme", organizationUnitFieldText(i18n, fieldState(currentName = "Acme", isLoading = true)))
+        assertEquals("Loading organization units…", organizationUnitFieldText(i18n, fieldState(isLoading = true)))
+        assertEquals("Select an organization", organizationUnitFieldText(i18n, fieldState()))
+        assertEquals("Passage à Beta…", organizationUnitFieldText(ThunderIDI18n(language = "fr-FR"), fieldState(switchingId = "ou-2")))
+    }
+
+    @Test
     fun `ships every switcher string`() {
         listOf(
-            "title",
-            "current",
-            "switch",
+            "label",
+            "placeholder",
             "switching",
             "loading",
             "empty",

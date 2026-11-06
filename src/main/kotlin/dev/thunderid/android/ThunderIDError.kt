@@ -30,6 +30,13 @@ enum class ThunderIDErrorCode(
     INVALID_GRANT("INVALID_GRANT"),
     CONSENT_REQUIRED("CONSENT_REQUIRED"),
 
+    /**
+     * The organization unit a sign-in or switch named does not exist, or the application cannot be used
+     * from it. The server does not tell the two apart (`unauthorized_client`, or `FES-1023` for an embedded
+     * flow).
+     */
+    ORGANIZATION_UNIT_UNAVAILABLE("ORGANIZATION_UNIT_UNAVAILABLE"),
+
     // Registration
     USER_ALREADY_EXISTS("USER_ALREADY_EXISTS"),
     INVALID_INPUT("INVALID_INPUT"),
@@ -52,7 +59,7 @@ enum class ThunderIDErrorCode(
     FORBIDDEN("FORBIDDEN"),
     NOT_FOUND("NOT_FOUND"),
 
-    /** An administration flow did not complete. [dev.thunderid.android.management.AdministrationFlowError] carries why. */
+    /** An administration flow did not complete. [dev.thunderid.android.api.management.AdministrationFlowError] carries why. */
     ADMINISTRATION_FLOW_FAILED("ADMINISTRATION_FLOW_FAILED"),
 
     // Network & Server
@@ -94,7 +101,8 @@ data class ServerErrorMessage(
 /**
  * The error envelope the ThunderID server returns with a failed request.
  *
- * @property code The server's error code, such as `USR-1027`.
+ * @property code The server's error code, such as `USR-1027`, or the OAuth `error`, such as
+ *   `invalid_client_metadata`, for an endpoint that answers in the OAuth form.
  */
 data class ServerError(
     val code: String,
@@ -105,7 +113,8 @@ data class ServerError(
         /**
          * Reads the server's error envelope from a raw response body, or returns `null` when the body is
          * not one: not JSON, not an object, or without a string `code`. A message or description sent as
-         * a plain string becomes its [ServerErrorMessage.defaultValue].
+         * a plain string becomes its [ServerErrorMessage.defaultValue]. An OAuth 2.0 error body (`error`,
+         * `error_description`) is read too, with `error` as the code and `error_description` as the message.
          */
         fun parse(body: String?): ServerError? {
             if (body.isNullOrBlank()) return null
@@ -115,11 +124,25 @@ data class ServerError(
                     ?.takeIf { it.isJsonObject }
                     ?.asJsonObject
                     ?: return null
-            val code = json.get("code")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString } ?: return null
+            val code =
+                json.get("code")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                    ?: return oauthError(json)
             return ServerError(
                 code = code.asString,
                 message = message(json.get("message")),
                 description = message(json.get("description")),
+            )
+        }
+
+        /**
+         * An OAuth 2.0 error body (`error`, `error_description`), as dynamic client registration answers:
+         * `error` becomes the code and `error_description` the message.
+         */
+        private fun oauthError(json: JsonObject): ServerError? {
+            val error = json.get("error")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString } ?: return null
+            return ServerError(
+                code = error.asString,
+                message = json.string("error_description")?.let { ServerErrorMessage(defaultValue = it) },
             )
         }
 

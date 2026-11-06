@@ -3,7 +3,7 @@
 
 package dev.thunderid.playground
 
-// Stories for the admin components (dev.thunderid.compose.components.admin). Each one has a
+// Stories for the admin components (dev.thunderid.compose.components.management). Each one has a
 // Live story that renders the connected component against the server, and Base stories that render the
 // presentational variant with sample data, so the layout can be explored without a session.
 
@@ -223,6 +223,48 @@ private fun membershipSpec(
 val AdminComponentSpecs: List<ComponentSpec> =
     listOf(
         listSpec("groupList", "GroupList", "groups", "selectedGroupId"),
+        ComponentSpec(
+            id = "groupDetails",
+            group = "Admin",
+            name = "GroupDetails",
+            controls =
+                listOf(
+                    Control.Text("groupId"),
+                    Control.Bool("editable"),
+                    Control.Bool("deletable"),
+                    ADMINISTRATION_MODE,
+                    Control.Bool("isLoading"),
+                    Control.Text("error"),
+                ),
+            defaults =
+                mapOf(
+                    "groupId" to "",
+                    "editable" to true,
+                    "deletable" to true,
+                    "administrationMode" to "native",
+                    "isLoading" to false,
+                    "error" to "",
+                ),
+            stories = stateStories(),
+            code = { story, props ->
+                val args = mutableListOf<Pair<String, String>>()
+                if (story == "live") {
+                    args += "groupId" to quote(props.resourceId("groupId", ManagementFixtures.groupId).ifBlank { "<groupId>" })
+                    args.administrationMode(props)
+                    if (props.flag("editable")) args += "editable" to "true"
+                    if (props.flag("deletable")) {
+                        args += "deletable" to "true"
+                        args += "onDeleted" to "{ /* navigate back */ }"
+                    }
+                } else {
+                    args += "group" to "group"
+                    if (props.flag("deletable")) args += "onDelete" to "{ /* delete */ }"
+                    args += "members" to "{ BaseGroupMembers(members = members) }"
+                    args.state(props)
+                }
+                call(if (story == "live") "GroupDetails" else "BaseGroupDetails", args)
+            },
+        ),
         membershipSpec(
             "groupMembers",
             "GroupMembers",
@@ -236,19 +278,85 @@ val AdminComponentSpecs: List<ComponentSpec> =
         createSpec("groupCreate", "GroupCreate", "group"),
         listSpec("roleList", "RoleList", "roles", "selectedRoleId"),
         ComponentSpec(
+            id = "roleDetails",
+            group = "Admin",
+            name = "RoleDetails",
+            controls =
+                listOf(
+                    Control.Text("roleId"),
+                    Control.Bool("editable"),
+                    Control.Bool("deletable"),
+                    ADMINISTRATION_MODE,
+                    Control.Bool("isLoading"),
+                    Control.Text("error"),
+                ),
+            defaults =
+                mapOf(
+                    "roleId" to "",
+                    "editable" to true,
+                    "deletable" to true,
+                    "administrationMode" to "native",
+                    "isLoading" to false,
+                    "error" to "",
+                ),
+            stories = stateStories(),
+            code = { story, props ->
+                val args = mutableListOf<Pair<String, String>>()
+                if (story == "live") {
+                    args += "roleId" to quote(props.resourceId("roleId", ManagementFixtures.roleId).ifBlank { "<roleId>" })
+                    args.administrationMode(props)
+                    if (props.flag("editable")) args += "editable" to "true"
+                    if (props.flag("deletable")) {
+                        args += "deletable" to "true"
+                        args += "onDeleted" to "{ /* navigate back */ }"
+                    }
+                } else {
+                    args += "role" to "role"
+                    if (props.flag("deletable")) args += "onDelete" to "{ /* delete */ }"
+                    args += "permissions" to "{ BaseRolePermissions(permissions = role.permissions) }"
+                    args += "assignments" to "{ BaseRoleAssignments(assignments = assignments) }"
+                    args.state(props)
+                }
+                call(if (story == "live") "RoleDetails" else "BaseRoleDetails", args)
+            },
+        ),
+        ComponentSpec(
             id = "rolePermissions",
             group = "Admin",
             name = "RolePermissions",
-            controls = listOf(Control.Text("roleId"), Control.Text("title"), Control.Bool("isLoading"), Control.Text("error")),
-            defaults = mapOf("roleId" to "", "title" to "", "isLoading" to false, "error" to ""),
+            controls =
+                listOf(
+                    Control.Text("roleId"),
+                    Control.Bool("editable"),
+                    ADMINISTRATION_MODE,
+                    Control.Text("title"),
+                    Control.Bool("isLoading"),
+                    Control.Text("error"),
+                ),
+            defaults =
+                mapOf(
+                    "roleId" to "",
+                    "editable" to true,
+                    "administrationMode" to "native",
+                    "title" to "",
+                    "isLoading" to false,
+                    "error" to "",
+                ),
             stories = stateStories(listOf(EMPTY_STORY)),
             code = { story, props ->
                 val args = mutableListOf<Pair<String, String>>()
                 if (story == "live") {
                     args += "roleId" to quote(props.resourceId("roleId", ManagementFixtures.roleId).ifBlank { "<roleId>" })
+                    if (props.flag("editable")) args += "editable" to "true"
+                    args.administrationMode(props)
                 } else {
                     args += "permissions" to if (story == "empty") "emptyList()" else "role.permissions"
                     args += "resourceServerNames" to "mapOf(\"rs-system\" to \"System API\")"
+                    if (props.flag("editable")) {
+                        args += "candidates" to "candidates"
+                        args += "onAdd" to "{ resourceServerId, permission -> /* save the role */ }"
+                        args += "onRemove" to "{ resourceServerId, permission -> /* save the role */ }"
+                    }
                     args.state(props)
                 }
                 args.text(props, "title")

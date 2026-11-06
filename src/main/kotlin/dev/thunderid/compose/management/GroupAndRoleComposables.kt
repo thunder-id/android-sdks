@@ -11,23 +11,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.thunderid.android.ThunderIDFetcher
-import dev.thunderid.android.management.AdministrationMode
-import dev.thunderid.android.management.CreateGroupRequest
-import dev.thunderid.android.management.CreateRoleRequest
-import dev.thunderid.android.management.Group
-import dev.thunderid.android.management.GroupListResponse
-import dev.thunderid.android.management.GroupMemberInput
-import dev.thunderid.android.management.GroupMemberListResponse
-import dev.thunderid.android.management.GroupQueryKeys
-import dev.thunderid.android.management.Role
-import dev.thunderid.android.management.RoleAssigneeType
-import dev.thunderid.android.management.RoleAssignmentInput
-import dev.thunderid.android.management.RoleAssignmentListResponse
-import dev.thunderid.android.management.RoleListResponse
-import dev.thunderid.android.management.RoleQueryKeys
-import dev.thunderid.android.management.UpdateGroupRequest
-import dev.thunderid.android.management.UpdateRoleRequest
-import dev.thunderid.android.management.hasPermission
+import dev.thunderid.android.api.management.AdministrationMode
+import dev.thunderid.android.api.management.CreateGroupRequest
+import dev.thunderid.android.api.management.CreateRoleRequest
+import dev.thunderid.android.api.management.Group
+import dev.thunderid.android.api.management.GroupListResponse
+import dev.thunderid.android.api.management.GroupMemberInput
+import dev.thunderid.android.api.management.GroupMemberListResponse
+import dev.thunderid.android.api.management.GroupQueryKeys
+import dev.thunderid.android.api.management.Role
+import dev.thunderid.android.api.management.RoleAssigneeType
+import dev.thunderid.android.api.management.RoleAssignmentInput
+import dev.thunderid.android.api.management.RoleAssignmentListResponse
+import dev.thunderid.android.api.management.RoleListResponse
+import dev.thunderid.android.api.management.RoleQueryKeys
+import dev.thunderid.android.api.management.UpdateGroupRequest
+import dev.thunderid.android.api.management.UpdateRoleRequest
+import dev.thunderid.android.api.management.hasPermission
 import dev.thunderid.compose.LocalThunderID
 
 /** The input of a group member mutation: the group, and the members to add or remove. */
@@ -93,11 +93,18 @@ fun rememberUpdateGroup(fetcher: ThunderIDFetcher? = null): ResourceMutationStat
         listOf(listOf(GroupQueryKeys.GROUP, id), listOf(GroupQueryKeys.GROUPS), listOf(GroupQueryKeys.MEMBERSHIPS))
     }) { client, (id, request) -> client.groups.update(id, request, fetcher) }
 
+/**
+ * Remembers a mutation that deletes a group, through the group deletion flow when [administrationMode] is
+ * [AdministrationMode.FLOW] and one is configured.
+ */
 @Composable
-fun rememberDeleteGroup(fetcher: ThunderIDFetcher? = null): ResourceMutationState<String, Unit> =
+fun rememberDeleteGroup(
+    fetcher: ThunderIDFetcher? = null,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
+): ResourceMutationState<String, Unit> =
     rememberResourceMutation({
         listOf(listOf(GroupQueryKeys.GROUPS), listOf(GroupQueryKeys.MEMBERSHIPS), listOf(RoleQueryKeys.ROLE_ASSIGNMENTS))
-    }) { client, id -> client.groups.delete(id, fetcher) }
+    }) { client, id -> client.groups.delete(id, fetcher, administrationMode) }
 
 internal fun groupMembershipKeys(groupId: String): List<List<String>> =
     listOf(
@@ -173,10 +180,17 @@ fun rememberUpdateRole(fetcher: ThunderIDFetcher? = null): ResourceMutationState
         listOf(listOf(RoleQueryKeys.ROLE, id), listOf(RoleQueryKeys.ROLES))
     }) { client, (id, request) -> client.roles.update(id, request, fetcher) }
 
+/**
+ * Remembers a mutation that deletes a role, through the role deletion flow when [administrationMode] is
+ * [AdministrationMode.FLOW] and one is configured.
+ */
 @Composable
-fun rememberDeleteRole(fetcher: ThunderIDFetcher? = null): ResourceMutationState<String, Unit> =
+fun rememberDeleteRole(
+    fetcher: ThunderIDFetcher? = null,
+    administrationMode: AdministrationMode = AdministrationMode.NATIVE,
+): ResourceMutationState<String, Unit> =
     rememberResourceMutation({ listOf(listOf(RoleQueryKeys.ROLES), listOf(RoleQueryKeys.ROLE_ASSIGNMENTS)) }) { client, id ->
-        client.roles.delete(id, fetcher)
+        client.roles.delete(id, fetcher, administrationMode)
     }
 
 @Composable

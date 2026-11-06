@@ -83,24 +83,26 @@ Configuration: ktlint 12.1.1 via the Gradle plugin. Key rules enforced:
 
 ```
 src/main/kotlin/dev/thunderid/
-  android/              Core SDK (auth, token, http layers)
-    auth/               PKCE + flow execution client
-    http/               HTTP client
-    management/         Management API clients and models (users, agents, groups, roles)
+  android/              Core SDK
+    api/account/        The signed-in user's own organization units (`/users/me/ous`)
+    api/auth/           PKCE, flow execution, federated and passkey clients, CIBA, device authorization, PAR
+    api/management/     Management API clients and models (users, agents, groups, roles, ...)
+    backend/, http/     Backend mode and HTTP client
     token/              Token store, validator, refresher, JWKS cache
   compose/              Jetpack Compose component library
     components/         Grouped by function, not by kind
-      auth/             SignIn, SignUp forms; Callback (OAuth2 redirect handler)
+      auth/             SignIn, SignUp forms; DeviceGrant (approve a device's code); Callback (OAuth2 redirect handler)
         buttons/        SignInButton, SignOutButton, SignUpButton
           adapters/     Social and passkey sign-in buttons (GoogleButton, GitHubButton, PasskeyButton)
         flow/           Flow-step building blocks (FlowErrorBanner, KeyValueList)
         guards/         SignedIn, SignedOut, Loading
       account/          The signed-in user's own components (User, UserAvatar, UserDropdown, UserProfile,
-                        ChangeCredential)
-      admin/            Admin components for users, agents, groups and roles
+                        ChangeCredential, OrganizationUnitSwitcher)
+      management/       Management components for users, agents, groups, roles, applications, projects (with
+                        ProjectSwitcher), organization units and sharing policies
       common/           LanguageSwitcher
-    management/         Admin data layer (state holders over the management APIs)
-    i18n/               Localization (ThunderI18n, DefaultStrings)
+    management/         Management data layer (state holders over the management APIs)
+    i18n/               Localization (ThunderIDI18n, DefaultStrings, and one strings object per shipped locale)
 src/test/kotlin/        Unit tests
 playground/             Development app (checks, component explorer, session inspector); builds the SDK via includeBuild
 tests/e2e/              Maestro E2E suite (fetches the Quickstart sample from thunder-id/samples)
@@ -124,7 +126,7 @@ Both variants also accept a custom render. See [Adding or changing a component](
 
 The [SDK development specification](https://github.com/thunder-id/thunderid/blob/main/docs-internals/sdk-development/spec.md) (UI) is the contract. In practice, every component:
 
-1. **Lives in its functional group:** `auth/` (sign-in, sign-up, recovery, invites, callback, with `buttons/`, `flow/` and `guards/` inside), `account/` (the signed-in user's own data), `admin/` (management), or `common/` (shared across groups, such as the language switcher and branding). Primitives and the data layer keep their own folders.
+1. **Lives in its functional group:** `auth/` (sign-in, sign-up, recovery, invites, callback, with `buttons/`, `flow/` and `guards/` inside), `account/` (the signed-in user's own data), `management/` (users, groups, roles, agents, applications), or `common/` (shared across groups, such as the language switcher and branding). Primitives and the data layer keep their own folders.
 2. **Ships a styled variant and a `Base` variant.** `Base` takes its data and callbacks as parameters, with no SDK state, so an app can drive it itself (e.g. `BaseUserList`).
 3. **Accepts a custom render on both variants.** Passing it replaces the built-in UI, while the component keeps its data loading, state and actions. The mechanism is the platform's own:
    - Jetpack Compose: an optional trailing `content` lambda, the same pattern as `BaseSignIn`.
@@ -136,12 +138,16 @@ The [SDK development specification](https://github.com/thunder-id/thunderid/blob
 
 A component that changes here usually needs the same change in the sibling SDKs. See the parity rules in the specification.
 
+### Projects and organization units
+
+A project is not an organization unit: it has a root organization unit of its own, and its id is a separate id. The current project (`ThunderIDState.currentProject`, set by `ProjectSwitcher`) is client-side context. Only applications and agents take a `projectId`: `ApplicationList` and `AgentList` pass the current project when the app passes none, and `ApplicationCreate` and `AgentCreate` send it when the app passes no organization unit. Never default an `ouId` or a parent unit to a project id; the other create forms keep the signed-in user's organization unit as the default. Map project and organization unit refusals by the server's error code (`PRJ-*`, `OU-*`), never by guessing from the error text or the HTTP status.
+
 ## Samples
 
 The quickstarts and integration samples live in [thunder-id/samples](https://github.com/thunder-id/samples), and each one pins a released version of this SDK. A change here therefore can't break a sample until the sample bumps its version, which is exactly when a break would surface for a real app. Before raising a pull request, check every sample that uses this SDK:
 
 - **A sample stops compiling or behaving the same** (a renamed type or package, a changed signature, a moved default): raise a samples pull request that bumps the SDK version and fixes the sample. Keep it as a draft until the SDK release it needs is out.
-- **The change adds something a sample exists to show** (a self-care capability for `self-care/account`, a management component or operation for `b2b/manage`, a new sign-in option for the quickstarts): update that sample in the same samples pull request, so it demonstrates the new capability rather than working around its absence.
+- **The change adds something a sample exists to show** (a self-care capability for `self-care/account`, a management component or operation for `management/admin`, a new sign-in option for the quickstarts): update that sample in the same samples pull request, so it demonstrates the new capability rather than working around its absence.
 - Link the samples pull request from this pull request's **Related PRs**, or say why no sample is affected.
 - When the change breaks the quickstart, add a `Samples-Ref: refs/pull/<number>/head` line to this pull request's body. The PR builder's sample build and E2E suite then take the quickstart from that samples pull request instead of `main`. Edit the body, then re-run the jobs.
 

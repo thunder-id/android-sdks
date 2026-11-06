@@ -31,6 +31,16 @@ internal class TokenStore(
         response.scope?.let { storage.store(StoreKey.SCOPE, it) }
     }
 
+    /**
+     * Replaces the whole token set with [response], so nothing of the previous session, such as a refresh
+     * token bound to another organization unit, outlives it. Other keys in the storage stay.
+     */
+    fun replace(response: TokenResponse) {
+        listOf(StoreKey.ACCESS_TOKEN, StoreKey.REFRESH_TOKEN, StoreKey.ID_TOKEN, StoreKey.TOKEN_EXPIRY, StoreKey.SCOPE)
+            .forEach { storage.delete(it) }
+        save(response)
+    }
+
     fun accessToken(): String? = storage.retrieve(StoreKey.ACCESS_TOKEN)
 
     fun refreshToken(): String? = storage.retrieve(StoreKey.REFRESH_TOKEN)

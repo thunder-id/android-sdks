@@ -21,6 +21,10 @@ data class ThunderIDConfig(
     val signInOptions: Map<String, Any> = emptyMap(),
     val signOutOptions: Map<String, Any> = emptyMap(),
     val signUpOptions: Map<String, Any> = emptyMap(),
+    // Redirect mode only: push every authorization request to `/oauth2/par` (RFC 9126) and redirect with the
+    // returned `request_uri`. Sign-in pushes anyway when the server's metadata sets
+    // `require_pushed_authorization_requests`; `false` never stops that. Only `signIn(options)` can push.
+    val pushedAuthorizationRequests: Boolean = false,
     // Application Identity
     val applicationId: String? = null,
     val organizationHandle: String? = null,

@@ -29,23 +29,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.thunderid.android.management.AccessStatus
-import dev.thunderid.android.management.AccessStatusValue
-import dev.thunderid.android.management.AccountLifecycleAction
-import dev.thunderid.android.management.ManagedUser
-import dev.thunderid.android.management.resolveManagedIdentityName
-import dev.thunderid.compose.components.admin.AdminListState
-import dev.thunderid.compose.components.admin.ApplicationDetails
-import dev.thunderid.compose.components.admin.ApplicationDetailsState
-import dev.thunderid.compose.components.admin.BaseApplicationDetails
-import dev.thunderid.compose.components.admin.BaseGroupCreate
-import dev.thunderid.compose.components.admin.BaseUserDetails
-import dev.thunderid.compose.components.admin.BaseUserList
-import dev.thunderid.compose.components.admin.GroupCreate
-import dev.thunderid.compose.components.admin.NamedResourceFormState
-import dev.thunderid.compose.components.admin.UserDetails
-import dev.thunderid.compose.components.admin.UserDetailsState
-import dev.thunderid.compose.components.admin.UserList
+import dev.thunderid.android.api.management.AccessStatus
+import dev.thunderid.android.api.management.AccessStatusValue
+import dev.thunderid.android.api.management.AccountLifecycleAction
+import dev.thunderid.android.api.management.ManagedUser
+import dev.thunderid.android.api.management.RoleResourcePermissions
+import dev.thunderid.android.api.management.resolveManagedIdentityName
+import dev.thunderid.compose.components.management.AdminListState
+import dev.thunderid.compose.components.management.ApplicationDetails
+import dev.thunderid.compose.components.management.ApplicationDetailsState
+import dev.thunderid.compose.components.management.BaseApplicationDetails
+import dev.thunderid.compose.components.management.BaseGroupCreate
+import dev.thunderid.compose.components.management.BaseRolePermissions
+import dev.thunderid.compose.components.management.BaseUserDetails
+import dev.thunderid.compose.components.management.BaseUserList
+import dev.thunderid.compose.components.management.GroupCreate
+import dev.thunderid.compose.components.management.NamedResourceFormState
+import dev.thunderid.compose.components.management.RolePermissions
+import dev.thunderid.compose.components.management.RolePermissionsState
+import dev.thunderid.compose.components.management.UserDetails
+import dev.thunderid.compose.components.management.UserDetailsState
+import dev.thunderid.compose.components.management.UserList
 
 private val CUSTOM_STORIES =
     listOf(
@@ -166,6 +170,38 @@ val CustomRenderSpecs: List<ComponentSpec> =
                 """.trimMargin()
             },
         ),
+        ComponentSpec(
+            id = "customRolePermissions",
+            group = "Custom rendering",
+            name = "RolePermissions → editable chips",
+            controls = listOf(Control.Text("roleId")),
+            defaults = mapOf("roleId" to ""),
+            stories = CUSTOM_STORIES,
+            code = { story, props ->
+                val head =
+                    if (story == "live") {
+                        "RolePermissions(roleId = ${quote(props.text("roleId"))}, editable = true)"
+                    } else {
+                        "BaseRolePermissions(permissions = granted, candidates = candidates, onAdd = { s, p -> }, onRemove = { s, p -> })"
+                    }
+                """
+                |$head { view ->
+                |    view.permissions.forEach { entry ->
+                |        Text(view.resourceServerName(entry.resourceServerId), style = MaterialTheme.typography.titleSmall)
+                |        entry.permissions.forEach { permission ->
+                |            // Confirm a removal yourself: a custom render replaces the built-in dialog.
+                |            AssistChip(onClick = { view.onRemove?.invoke(entry.resourceServerId, permission) }, label = { Text(permission) })
+                |        }
+                |    }
+                |    view.onAdd?.let { add ->
+                |        view.candidates.orEmpty().forEach { server ->
+                |            server.permissions.forEach { permission -> TextButton(onClick = { add(server.resourceServerId, permission) }) { Text(permission) } }
+                |        }
+                |    }
+                |}
+                """.trimMargin()
+            },
+        ),
     )
 
 /** Whether [componentId] is one of the custom rendering stories. */
@@ -233,6 +269,38 @@ fun CustomRenderPreview(
                         onTap()
                     },
                 ) { ApplicationCard(it) }
+            }
+        }
+
+        "customRolePermissions" -> {
+            val roleId = props.text("roleId").ifBlank { ManagementFixtures.roleId }
+            if (live && roleId.isBlank()) {
+                Text("Set roleId to an ID from your server.", color = MaterialTheme.colorScheme.onBackground)
+            } else if (live) {
+                RolePermissions(roleId = roleId, modifier = modifier, editable = true) { PermissionsCard(it) }
+            } else {
+                var granted by remember { mutableStateOf(AdminSamples.permissions) }
+                BaseRolePermissions(
+                    permissions = granted,
+                    modifier = modifier,
+                    resourceServerNames = AdminSamples.resourceServerNames + ("rs-reports" to "Reports API"),
+                    candidates = AdminSamples.permissionCandidates,
+                    onAdd = { server, permission ->
+                        granted = granted.filter { it.resourceServerId != server } +
+                            RoleResourcePermissions(
+                                server,
+                                (granted.firstOrNull { it.resourceServerId == server }?.permissions.orEmpty() + permission).distinct(),
+                            )
+                        onTap()
+                    },
+                    onRemove = { server, permission ->
+                        granted =
+                            granted
+                                .map { if (it.resourceServerId == server) it.copy(permissions = it.permissions - permission) else it }
+                                .filter { it.permissions.isNotEmpty() }
+                        onTap()
+                    },
+                ) { PermissionsCard(it) }
             }
         }
 
@@ -426,6 +494,59 @@ private fun ApplicationCard(details: ApplicationDetailsState) {
                         TextButton(onClick = { confirming = true }, enabled = !details.isRegeneratingSecret) {
                             Text("Regenerate secret")
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The role permissions state drawn as a Material card of chips. Removing asks for confirmation here too, since a
+ * custom render takes over the built-in dialog.
+ */
+@Composable
+private fun PermissionsCard(view: RolePermissionsState) {
+    var confirming by remember { mutableStateOf<Pair<String, String>?>(null) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Permissions", style = MaterialTheme.typography.titleLarge)
+            if (view.isLoading) CircularProgressIndicator()
+            view.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            view.permissions.forEach { entry ->
+                Text(view.resourceServerName(entry.resourceServerId), fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    entry.permissions.forEach { permission ->
+                        AssistChip(
+                            onClick = { if (view.onRemove != null) confirming = entry.resourceServerId to permission },
+                            label = { Text(if (view.onRemove != null) "$permission ✕" else permission) },
+                        )
+                    }
+                }
+            }
+            confirming?.let { (server, permission) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Remove $permission?", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { confirming = null }) { Text("Cancel") }
+                    Button(onClick = {
+                        confirming = null
+                        view.onRemove?.invoke(server, permission)
+                    }) { Text("Remove") }
+                }
+            }
+            val add = view.onAdd
+            if (add != null) {
+                val held = view.permissions.flatMap { entry -> entry.permissions.map { entry.resourceServerId to it } }.toSet()
+                val offered =
+                    view.candidates
+                        .orEmpty()
+                        .flatMap { server ->
+                            server.permissions.map { server.resourceServerId to it }
+                        }.filter { it !in held }
+                Text("Add", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    offered.take(4).forEach { (server, permission) ->
+                        TextButton(onClick = { add(server, permission) }, enabled = !view.isMutating) { Text("+ $permission") }
                     }
                 }
             }

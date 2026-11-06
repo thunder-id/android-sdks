@@ -396,6 +396,14 @@ private fun StoryPreview(
             AdminStoryPreview(componentId, storyId, props, onTap)
         }
 
+        in OrganizationUnitSpecs.map { it.id } -> {
+            OrganizationUnitStoryPreview(componentId, storyId, props, onTap)
+        }
+
+        in ProjectSpecs.map { it.id } -> {
+            ProjectStoryPreview(componentId, storyId, props, onTap)
+        }
+
         in CustomRenderSpecs.map { it.id } -> {
             CustomRenderPreview(componentId, storyId, props, onTap)
         }
@@ -407,6 +415,7 @@ private fun StoryPreview(
             } else {
                 SignIn(
                     applicationId = applicationId,
+                    organizationUnitId = (props["organizationUnitId"] as? String)?.ifBlank { null },
                     modifier = Modifier.fillMaxWidth(),
                     onComplete = { EventLog.ok("signIn:completed", "mode=app-native (explorer)") },
                     onError = { EventLog.error("signIn:error", it) },

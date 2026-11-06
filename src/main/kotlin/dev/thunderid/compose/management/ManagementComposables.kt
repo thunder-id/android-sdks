@@ -12,27 +12,27 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDFetcher
-import dev.thunderid.android.management.AdministrationMode
-import dev.thunderid.android.management.Agent
-import dev.thunderid.android.management.AgentListResponse
-import dev.thunderid.android.management.AgentQueryKeys
-import dev.thunderid.android.management.AgentRoleListResponse
-import dev.thunderid.android.management.AgentTypeListResponse
-import dev.thunderid.android.management.Application
-import dev.thunderid.android.management.ApplicationListResponse
-import dev.thunderid.android.management.ApplicationQueryKeys
-import dev.thunderid.android.management.ApplicationRequest
-import dev.thunderid.android.management.CreateAgentRequest
-import dev.thunderid.android.management.CreateManagedUserRequest
-import dev.thunderid.android.management.GroupQueryKeys
-import dev.thunderid.android.management.ManagedUser
-import dev.thunderid.android.management.ManagedUserListResponse
-import dev.thunderid.android.management.ManagedUserTypeListResponse
-import dev.thunderid.android.management.MembershipGroupListResponse
-import dev.thunderid.android.management.RoleQueryKeys
-import dev.thunderid.android.management.UpdateAgentRequest
-import dev.thunderid.android.management.UpdateManagedUserRequest
-import dev.thunderid.android.management.UserQueryKeys
+import dev.thunderid.android.api.management.AdministrationMode
+import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.AgentListResponse
+import dev.thunderid.android.api.management.AgentQueryKeys
+import dev.thunderid.android.api.management.AgentRoleListResponse
+import dev.thunderid.android.api.management.AgentTypeListResponse
+import dev.thunderid.android.api.management.Application
+import dev.thunderid.android.api.management.ApplicationListResponse
+import dev.thunderid.android.api.management.ApplicationQueryKeys
+import dev.thunderid.android.api.management.ApplicationRequest
+import dev.thunderid.android.api.management.CreateAgentRequest
+import dev.thunderid.android.api.management.CreateManagedUserRequest
+import dev.thunderid.android.api.management.GroupQueryKeys
+import dev.thunderid.android.api.management.ManagedUser
+import dev.thunderid.android.api.management.ManagedUserListResponse
+import dev.thunderid.android.api.management.ManagedUserTypeListResponse
+import dev.thunderid.android.api.management.MembershipGroupListResponse
+import dev.thunderid.android.api.management.RoleQueryKeys
+import dev.thunderid.android.api.management.UpdateAgentRequest
+import dev.thunderid.android.api.management.UpdateManagedUserRequest
+import dev.thunderid.android.api.management.UserQueryKeys
 import dev.thunderid.compose.LocalThunderID
 import kotlinx.coroutines.launch
 
@@ -84,14 +84,23 @@ fun <I, O> rememberResourceMutation(
 
 // MARK: - Applications
 
+/** Loads a page of applications, of the project [projectId] when it is set. */
 @Composable
 fun rememberGetApplications(
     limit: Int? = null,
     offset: Int? = null,
     fetcher: ThunderIDFetcher? = null,
+    projectId: String? = null,
 ): ResourceQueryState<ApplicationListResponse> =
-    rememberResourceQuery(listOf(ApplicationQueryKeys.APPLICATIONS, "limit=${limit ?: ""}", "offset=${offset ?: ""}")) {
-        it.applications.list(limit, offset, fetcher)
+    rememberResourceQuery(
+        listOf(
+            ApplicationQueryKeys.APPLICATIONS,
+            "limit=${limit ?: ""}",
+            "offset=${offset ?: ""}",
+            "projectId=${projectId.orEmpty()}",
+        ),
+    ) {
+        it.applications.list(limit, offset, fetcher, projectId)
     }
 
 @Composable
@@ -196,6 +205,7 @@ fun rememberDeleteUser(
 
 // MARK: - Agents
 
+/** Loads a page of agents, of the project [projectId] when it is set. */
 @Composable
 fun rememberGetAgents(
     limit: Int? = null,
@@ -203,11 +213,18 @@ fun rememberGetAgents(
     filter: String? = null,
     fetcher: ThunderIDFetcher? = null,
     enabled: Boolean = true,
+    projectId: String? = null,
 ): ResourceQueryState<AgentListResponse> =
     rememberResourceQuery(
-        listOf(AgentQueryKeys.AGENTS, "filter=${filter.orEmpty()}", "limit=${limit ?: ""}", "offset=${offset ?: ""}"),
+        listOf(
+            AgentQueryKeys.AGENTS,
+            "filter=${filter.orEmpty()}",
+            "limit=${limit ?: ""}",
+            "offset=${offset ?: ""}",
+            "projectId=${projectId.orEmpty()}",
+        ),
         enabled,
-    ) { it.agents.list(limit, offset, filter, fetcher) }
+    ) { it.agents.list(limit, offset, filter, fetcher, projectId) }
 
 @Composable
 fun rememberGetAgent(

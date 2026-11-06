@@ -5,10 +5,10 @@ package dev.thunderid.compose.management
 
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.ThunderIDErrorCode
-import dev.thunderid.android.management.GroupMemberInput
-import dev.thunderid.android.management.GroupMemberType
-import dev.thunderid.android.management.GroupQueryKeys
-import dev.thunderid.android.management.RoleQueryKeys
+import dev.thunderid.android.api.management.GroupMemberInput
+import dev.thunderid.android.api.management.GroupMemberType
+import dev.thunderid.android.api.management.GroupQueryKeys
+import dev.thunderid.android.api.management.RoleQueryKeys
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

@@ -16,48 +16,53 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.thunderid.android.management.AccessStatus
-import dev.thunderid.android.management.AccessStatusValue
-import dev.thunderid.android.management.AccountLifecycleAction
-import dev.thunderid.android.management.AccountLifecycleSubjectKind
-import dev.thunderid.android.management.AdministrationMode
-import dev.thunderid.android.management.GroupMember
-import dev.thunderid.android.management.RoleAssignment
-import dev.thunderid.android.management.accountLifecycleActions
-import dev.thunderid.android.management.resolveAgentName
+import dev.thunderid.android.api.management.AccessStatus
+import dev.thunderid.android.api.management.AccessStatusValue
+import dev.thunderid.android.api.management.AccountLifecycleAction
+import dev.thunderid.android.api.management.AccountLifecycleSubjectKind
+import dev.thunderid.android.api.management.AdministrationMode
+import dev.thunderid.android.api.management.GroupMember
+import dev.thunderid.android.api.management.RoleAssignment
+import dev.thunderid.android.api.management.RoleResourcePermissions
+import dev.thunderid.android.api.management.accountLifecycleActions
+import dev.thunderid.android.api.management.resolveAgentName
 import dev.thunderid.compose.LocalThunderID
-import dev.thunderid.compose.components.admin.AgentCreate
-import dev.thunderid.compose.components.admin.AgentDetails
-import dev.thunderid.compose.components.admin.AgentList
-import dev.thunderid.compose.components.admin.ApplicationCreate
-import dev.thunderid.compose.components.admin.ApplicationDetails
-import dev.thunderid.compose.components.admin.ApplicationList
-import dev.thunderid.compose.components.admin.BaseAgentCreate
-import dev.thunderid.compose.components.admin.BaseAgentDetails
-import dev.thunderid.compose.components.admin.BaseAgentList
-import dev.thunderid.compose.components.admin.BaseApplicationCreate
-import dev.thunderid.compose.components.admin.BaseApplicationDetails
-import dev.thunderid.compose.components.admin.BaseApplicationList
-import dev.thunderid.compose.components.admin.BaseGroupCreate
-import dev.thunderid.compose.components.admin.BaseGroupList
-import dev.thunderid.compose.components.admin.BaseGroupMembers
-import dev.thunderid.compose.components.admin.BaseRoleAssignments
-import dev.thunderid.compose.components.admin.BaseRoleCreate
-import dev.thunderid.compose.components.admin.BaseRoleList
-import dev.thunderid.compose.components.admin.BaseRolePermissions
-import dev.thunderid.compose.components.admin.BaseUserCreate
-import dev.thunderid.compose.components.admin.BaseUserDetails
-import dev.thunderid.compose.components.admin.BaseUserList
-import dev.thunderid.compose.components.admin.GroupCreate
-import dev.thunderid.compose.components.admin.GroupList
-import dev.thunderid.compose.components.admin.GroupMembers
-import dev.thunderid.compose.components.admin.RoleAssignments
-import dev.thunderid.compose.components.admin.RoleCreate
-import dev.thunderid.compose.components.admin.RoleList
-import dev.thunderid.compose.components.admin.RolePermissions
-import dev.thunderid.compose.components.admin.UserCreate
-import dev.thunderid.compose.components.admin.UserDetails
-import dev.thunderid.compose.components.admin.UserList
+import dev.thunderid.compose.components.management.AgentCreate
+import dev.thunderid.compose.components.management.AgentDetails
+import dev.thunderid.compose.components.management.AgentList
+import dev.thunderid.compose.components.management.ApplicationCreate
+import dev.thunderid.compose.components.management.ApplicationDetails
+import dev.thunderid.compose.components.management.ApplicationList
+import dev.thunderid.compose.components.management.BaseAgentCreate
+import dev.thunderid.compose.components.management.BaseAgentDetails
+import dev.thunderid.compose.components.management.BaseAgentList
+import dev.thunderid.compose.components.management.BaseApplicationCreate
+import dev.thunderid.compose.components.management.BaseApplicationDetails
+import dev.thunderid.compose.components.management.BaseApplicationList
+import dev.thunderid.compose.components.management.BaseGroupCreate
+import dev.thunderid.compose.components.management.BaseGroupDetails
+import dev.thunderid.compose.components.management.BaseGroupList
+import dev.thunderid.compose.components.management.BaseGroupMembers
+import dev.thunderid.compose.components.management.BaseRoleAssignments
+import dev.thunderid.compose.components.management.BaseRoleCreate
+import dev.thunderid.compose.components.management.BaseRoleDetails
+import dev.thunderid.compose.components.management.BaseRoleList
+import dev.thunderid.compose.components.management.BaseRolePermissions
+import dev.thunderid.compose.components.management.BaseUserCreate
+import dev.thunderid.compose.components.management.BaseUserDetails
+import dev.thunderid.compose.components.management.BaseUserList
+import dev.thunderid.compose.components.management.GroupCreate
+import dev.thunderid.compose.components.management.GroupDetails
+import dev.thunderid.compose.components.management.GroupList
+import dev.thunderid.compose.components.management.GroupMembers
+import dev.thunderid.compose.components.management.RoleAssignments
+import dev.thunderid.compose.components.management.RoleCreate
+import dev.thunderid.compose.components.management.RoleDetails
+import dev.thunderid.compose.components.management.RoleList
+import dev.thunderid.compose.components.management.RolePermissions
+import dev.thunderid.compose.components.management.UserCreate
+import dev.thunderid.compose.components.management.UserDetails
+import dev.thunderid.compose.components.management.UserList
 
 /** The administration mode the story's control chose. */
 private fun Map<String, Any>.administrationMode(): AdministrationMode =
@@ -140,6 +145,7 @@ fun AdminStoryPreview(
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (live) LiveNote()
+        if (live && componentId in PROJECT_SCOPED_STORIES) CurrentProjectNote(componentId)
         when (componentId) {
             "groupList" -> {
                 if (live) {
@@ -163,6 +169,51 @@ fun AdminStoryPreview(
                         onSelect = if (selectable) ({ select(it.id) {} }) else null,
                         selectedGroupId = selected,
                         title = title,
+                    )
+                }
+            }
+
+            "groupDetails" -> {
+                val editable = props.flag("editable")
+                val deletable = props.flag("deletable")
+                if (live) {
+                    IdRequired(props.resourceId("groupId", ManagementFixtures.groupId), "group") { id ->
+                        GroupDetails(
+                            groupId = id,
+                            modifier = modifier,
+                            administrationMode = props.administrationMode(),
+                            editable = editable,
+                            deletable = deletable,
+                            onDeleted = {
+                                EventLog.ok("admin:group:deleted", id, source = "explorer")
+                                ManagementFixtures.groupId = ""
+                            },
+                        )
+                    }
+                } else {
+                    val group = AdminSamples.groups.first()
+                    BaseGroupDetails(
+                        group = group,
+                        modifier = modifier,
+                        error = error,
+                        isLoading = loading,
+                        onDelete =
+                            if (deletable) {
+                                {
+                                    EventLog.info("admin:groupDetails:delete", group.id, source = "explorer")
+                                    onTap()
+                                }
+                            } else {
+                                null
+                            },
+                        members = {
+                            BaseGroupMembers(
+                                members = AdminSamples.members,
+                                candidates = if (editable) AdminSamples.memberCandidates else null,
+                                onAdd = if (editable) ({ onTap() }) else null,
+                                onRemove = if (editable) ({ onTap() }) else null,
+                            )
+                        },
                     )
                 }
             }
@@ -271,19 +322,98 @@ fun AdminStoryPreview(
                 }
             }
 
-            "rolePermissions" -> {
+            "roleDetails" -> {
+                val editable = props.flag("editable")
+                val deletable = props.flag("deletable")
                 if (live) {
                     IdRequired(props.resourceId("roleId", ManagementFixtures.roleId), "role") { id ->
-                        RolePermissions(roleId = id, modifier = modifier, title = title)
+                        RoleDetails(
+                            roleId = id,
+                            modifier = modifier,
+                            administrationMode = props.administrationMode(),
+                            editable = editable,
+                            deletable = deletable,
+                            onDeleted = {
+                                EventLog.ok("admin:role:deleted", id, source = "explorer")
+                                ManagementFixtures.roleId = ""
+                            },
+                        )
                     }
                 } else {
-                    BaseRolePermissions(
-                        permissions = if (empty) emptyList() else AdminSamples.permissions,
+                    BaseRoleDetails(
+                        role = AdminSamples.role,
                         modifier = modifier,
                         error = error,
                         isLoading = loading,
-                        resourceServerNames = AdminSamples.resourceServerNames,
+                        onDelete =
+                            if (deletable) {
+                                {
+                                    EventLog.info("admin:roleDetails:delete", AdminSamples.role.id, source = "explorer")
+                                    onTap()
+                                }
+                            } else {
+                                null
+                            },
+                        permissions = {
+                            BaseRolePermissions(
+                                permissions = AdminSamples.role.permissions,
+                                resourceServerNames = AdminSamples.resourceServerNames,
+                            )
+                        },
+                        assignments = {
+                            BaseRoleAssignments(
+                                assignments = AdminSamples.assignments,
+                                candidates = if (editable) AdminSamples.assigneeCandidates else null,
+                                onAssign = if (editable) ({ onTap() }) else null,
+                                onUnassign = if (editable) ({ onTap() }) else null,
+                            )
+                        },
+                    )
+                }
+            }
+
+            "rolePermissions" -> {
+                val editable = props.flag("editable")
+                if (live) {
+                    IdRequired(props.resourceId("roleId", ManagementFixtures.roleId), "role") { id ->
+                        RolePermissions(
+                            roleId = id,
+                            modifier = modifier,
+                            editable = editable,
+                            administrationMode = props.administrationMode(),
+                            title = title,
+                        )
+                    }
+                } else {
+                    var granted by remember(empty) { mutableStateOf(if (empty) emptyList() else AdminSamples.permissions) }
+                    BaseRolePermissions(
+                        permissions = granted,
+                        modifier = modifier,
+                        error = error,
+                        isLoading = loading,
+                        resourceServerNames = AdminSamples.resourceServerNames + ("rs-reports" to "Reports API"),
                         title = title,
+                        candidates = if (editable) AdminSamples.permissionCandidates else null,
+                        onAdd =
+                            if (editable) {
+                                { server, permission ->
+                                    EventLog.info("admin:rolePermissions:add", "$server $permission", source = "explorer")
+                                    granted = samplePermissionsWith(granted, server, permission, add = true)
+                                    onTap()
+                                }
+                            } else {
+                                null
+                            },
+                        onRemove =
+                            if (editable) {
+                                { server, permission ->
+                                    EventLog.info("admin:rolePermissions:remove", "$server $permission", source = "explorer")
+                                    granted = samplePermissionsWith(granted, server, permission, add = false)
+                                    onTap()
+                                }
+                            } else {
+                                null
+                            },
                     )
                 }
             }
@@ -741,6 +871,25 @@ private fun LiveNote() {
     }
 }
 
+/** The stories whose live component follows the current project. */
+private val PROJECT_SCOPED_STORIES = setOf("applicationList", "applicationCreate", "agentList", "agentCreate")
+
+/**
+ * Says how the current project, picked in the live ProjectSwitcher story, shapes this live story: lists show the
+ * project's applications or agents, and creates without an ouId send it as projectId.
+ */
+@Composable
+private fun CurrentProjectNote(componentId: String) {
+    val project = LocalThunderID.current.currentProject
+    val text =
+        when {
+            project == null -> "No current project: pick one in the live ProjectSwitcher story to scope this to it."
+            componentId.endsWith("List") -> "Listing project ${project.displayName} (projectId = ${project.id})."
+            else -> "With no ouId, creates in project ${project.displayName} (projectId = ${project.id})."
+        }
+    Text(text, fontSize = 12.sp, color = Pg.TextMuted)
+}
+
 /** Renders [content] once there is an ID to show, and says how to get one otherwise. */
 @Composable
 private fun IdRequired(
@@ -757,4 +906,17 @@ private fun IdRequired(
     } else {
         content(id)
     }
+}
+
+/** [permissions] with [permission] of [server] granted or revoked, as the sample stories save a change. */
+private fun samplePermissionsWith(
+    permissions: List<RoleResourcePermissions>,
+    server: String,
+    permission: String,
+    add: Boolean,
+): List<RoleResourcePermissions> {
+    val held = permissions.firstOrNull { it.resourceServerId == server }?.permissions.orEmpty()
+    val next = if (add) (held + permission).distinct() else held - permission
+    return (permissions.filter { it.resourceServerId != server } + RoleResourcePermissions(server, next))
+        .filter { it.permissions.isNotEmpty() }
 }

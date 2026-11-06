@@ -5,6 +5,8 @@ package dev.thunderid.compose.components.auth
 
 import dev.thunderid.android.FlowAction
 import dev.thunderid.android.FlowComponent
+import dev.thunderid.android.FlowInput
+import dev.thunderid.compose.i18n.DefaultStrings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -53,5 +55,38 @@ class SignInTest {
         assertFalse(isOutlinedVariant("PRIMARY"))
         assertFalse(isOutlinedVariant(null))
         assertFalse(isOutlinedVariant(""))
+    }
+
+    @Test
+    fun `a Resolve OU step offering units is a pick, and one before sign-in is a typed field`() {
+        // After sign-in the server offers the eligible units as a SELECT with their handle paths.
+        assertEquals(FlowFieldKind.CHOICE, flowFieldKind("SELECT", listOf("acme/eng", "acme/sales")))
+        // Before sign-in no unit is ever listed: the OU_SELECT input has no options.
+        assertEquals(FlowFieldKind.ORGANIZATION_UNIT, flowFieldKind("OU_SELECT", null))
+        assertEquals(FlowFieldKind.CHOICE, flowFieldKind("OU_SELECT", listOf("acme")))
+        assertEquals(FlowFieldKind.PASSWORD, flowFieldKind("PASSWORD_INPUT", null))
+        assertEquals(FlowFieldKind.TEXT, flowFieldKind("TEXT_INPUT", emptyList()))
+        assertEquals(FlowFieldKind.TEXT, flowFieldKind(null, null))
+    }
+
+    @Test
+    fun `a Resolve OU step's options are read from the server's inputs`() {
+        val input =
+            com.google.gson.Gson().fromJson(
+                """{"identifier":"ouId","type":"SELECT","required":true,"options":["acme/eng","acme/sales"]}""",
+                FlowInput::class.java,
+            )
+        assertEquals("ouId", input.name)
+        assertEquals(listOf("acme/eng", "acme/sales"), input.options)
+    }
+
+    @Test
+    fun `ships the Resolve OU strings`() {
+        listOf(
+            "signIn.select.label",
+            "signIn.organizationUnit.label",
+            "signIn.organizationUnit.placeholder",
+            "signIn.organizationUnit.select",
+        ).forEach { assertTrue(it, DefaultStrings.all.containsKey(it)) }
     }
 }

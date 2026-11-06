@@ -3,35 +3,55 @@
 
 package dev.thunderid.android
 
-import dev.thunderid.android.auth.FlowExecutionClient
-import dev.thunderid.android.auth.PKCEManager
+import dev.thunderid.android.api.account.AccessibleOrganizationUnits
+import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
+import dev.thunderid.android.api.account.AccessibleOrganizationUnitsResponse
+import dev.thunderid.android.api.account.CurrentOrganizationUnit
+import dev.thunderid.android.api.account.currentOrganizationUnitFrom
+import dev.thunderid.android.api.auth.AuthorizationDetailsTypesClient
+import dev.thunderid.android.api.auth.CIBAInitiateOptions
+import dev.thunderid.android.api.auth.CIBAInitiateResponse
+import dev.thunderid.android.api.auth.DeviceAuthorization
+import dev.thunderid.android.api.auth.DeviceGrantRelay
+import dev.thunderid.android.api.auth.FlowExecutionClient
+import dev.thunderid.android.api.auth.OAuthClient
+import dev.thunderid.android.api.auth.OrganizationUnitSwitchResult
+import dev.thunderid.android.api.auth.PKCEManager
+import dev.thunderid.android.api.auth.SupportedAuthorizationDetailsType
+import dev.thunderid.android.api.auth.SwitchOrganizationUnitOptions
+import dev.thunderid.android.api.auth.withErrorAsFailureReason
+import dev.thunderid.android.api.management.AdministrationClient
+import dev.thunderid.android.api.management.AgentTypesClient
+import dev.thunderid.android.api.management.AgentsClient
+import dev.thunderid.android.api.management.ApplicationsClient
+import dev.thunderid.android.api.management.AuthorizationDetailTypesClient
+import dev.thunderid.android.api.management.ClientRegistrationsClient
+import dev.thunderid.android.api.management.ConfigurationClient
+import dev.thunderid.android.api.management.ConfigurationVersionsClient
+import dev.thunderid.android.api.management.ConnectionsClient
+import dev.thunderid.android.api.management.CredentialConfigurationsClient
+import dev.thunderid.android.api.management.DesignClient
+import dev.thunderid.android.api.management.FlowsClient
+import dev.thunderid.android.api.management.GatewaysClient
+import dev.thunderid.android.api.management.GroupsClient
+import dev.thunderid.android.api.management.ManagementTransport
+import dev.thunderid.android.api.management.NotificationTemplatesClient
+import dev.thunderid.android.api.management.OrganizationUnitsClient
+import dev.thunderid.android.api.management.PresentationDefinitionsClient
+import dev.thunderid.android.api.management.ProjectsClient
+import dev.thunderid.android.api.management.ResourceServersClient
+import dev.thunderid.android.api.management.RolesClient
+import dev.thunderid.android.api.management.SecretsClient
+import dev.thunderid.android.api.management.ServerConfigClient
+import dev.thunderid.android.api.management.TranslationsClient
+import dev.thunderid.android.api.management.UserTypesClient
+import dev.thunderid.android.api.management.UsersClient
+import dev.thunderid.android.api.management.VariablesClient
+import dev.thunderid.android.api.management.getTokenPermissions
 import dev.thunderid.android.backend.BackendClient
 import dev.thunderid.android.backend.BackendSessionStore
 import dev.thunderid.android.backend.resolveBackendEndpoints
 import dev.thunderid.android.http.HttpClient
-import dev.thunderid.android.management.AdministrationClient
-import dev.thunderid.android.management.AgentTypesClient
-import dev.thunderid.android.management.AgentsClient
-import dev.thunderid.android.management.ApplicationsClient
-import dev.thunderid.android.management.ConfigurationClient
-import dev.thunderid.android.management.ConfigurationVersionsClient
-import dev.thunderid.android.management.ConnectionsClient
-import dev.thunderid.android.management.DesignClient
-import dev.thunderid.android.management.FlowsClient
-import dev.thunderid.android.management.GatewaysClient
-import dev.thunderid.android.management.GroupsClient
-import dev.thunderid.android.management.ManagementTransport
-import dev.thunderid.android.management.NotificationTemplatesClient
-import dev.thunderid.android.management.OrganizationUnitsClient
-import dev.thunderid.android.management.ResourceServersClient
-import dev.thunderid.android.management.RolesClient
-import dev.thunderid.android.management.SecretsClient
-import dev.thunderid.android.management.ServerConfigClient
-import dev.thunderid.android.management.TranslationsClient
-import dev.thunderid.android.management.UserTypesClient
-import dev.thunderid.android.management.UsersClient
-import dev.thunderid.android.management.VariablesClient
-import dev.thunderid.android.management.getTokenPermissions
 import dev.thunderid.android.token.JWKSCache
 import dev.thunderid.android.token.TokenRefresher
 import dev.thunderid.android.token.TokenStore
@@ -61,6 +81,13 @@ class ThunderIDClient internal constructor(
     private var tokenRefresher: TokenRefresher? = null
     private var tokenValidator: TokenValidator? = null
     private var flowClient: FlowExecutionClient? = null
+    private var oauthClient: OAuthClient? = null
+
+    /** The organization unit the redirect sign-in in progress is bounded to, for redeeming its code. */
+    private var pendingOrganizationUnitId: String? = null
+
+    /** Whether the embedded flow in progress was started for an organization unit, so it replaces the session. */
+    private var boundedFlowInProgress = false
     private val pkceManager = PKCEManager()
     private var loading = false
     private var currentUser: User? = null
@@ -102,7 +129,9 @@ class ThunderIDClient internal constructor(
         val jwks = JWKSCache(http)
         tokenStore = store
         tokenValidator = TokenValidator(jwks, config)
-        tokenRefresher = TokenRefresher(http, store)
+        val oauth = OAuthClient(http, config.baseUrl)
+        oauthClient = oauth
+        tokenRefresher = TokenRefresher(oauth, store)
         flowClient = FlowExecutionClient(http)
         http.setAccessTokenProvider {
             val cfg =
@@ -222,6 +251,35 @@ class ThunderIDClient internal constructor(
     val configurationVersions: ConfigurationVersionsClient
         get() = ConfigurationVersionsClient(managementTransport("configuration-versions") { it.configurationVersions })
 
+    /** OpenID4VCI credential configuration operations. Throws until [initialize] has run. */
+    val credentialConfigurations: CredentialConfigurationsClient
+        get() =
+            CredentialConfigurationsClient(
+                managementTransport("openid4vci/credential-configurations") { it.credentialConfigurations },
+            )
+
+    /** OpenID4VP presentation definition operations. Throws until [initialize] has run. */
+    val presentationDefinitions: PresentationDefinitionsClient
+        get() =
+            PresentationDefinitionsClient(
+                managementTransport("openid4vp/presentation-definitions") { it.presentationDefinitions },
+            )
+
+    /**
+     * Dynamic client registration (RFC 7591) and registration management (RFC 7592). Throws until [initialize]
+     * has run.
+     */
+    val clientRegistrations: ClientRegistrationsClient
+        get() = ClientRegistrationsClient(managementTransport("oauth2/dcr/register") { it.clientRegistrations })
+
+    /** Project management operations. Only the Control Plane serves them. Throws until [initialize] has run. */
+    val projects: ProjectsClient
+        get() = ProjectsClient(managementTransport("projects") { it.projects })
+
+    /** RFC 9396 authorization details type management operations. Throws until [initialize] has run. */
+    val authorizationDetailTypes: AuthorizationDetailTypesClient
+        get() = AuthorizationDetailTypesClient(managementTransport("authorization-detail-types") { it.authorizationDetailTypes })
+
     /** Configuration import and export. Throws until [initialize] has run. */
     val configuration: ConfigurationClient
         get() =
@@ -240,7 +298,7 @@ class ThunderIDClient internal constructor(
     /**
      * Returns the permissions the signed-in user's access token carries, read from its `scopes` or `scope`
      * claim. Returns an empty list when nobody is signed in or the token is not a JWT. Test one against a
-     * required permission with [dev.thunderid.android.management.hasPermission]. The result only decides what
+     * required permission with [dev.thunderid.android.api.management.hasPermission]. The result only decides what
      * to show: the server still decides every request.
      *
      * In backend mode they come only from the backend's session (`scope`): the token stays on the backend, so
@@ -284,7 +342,11 @@ class ThunderIDClient internal constructor(
                 if (payload.flowId != null) {
                     flowClient!!.submit(payload.flowId, payload.actionId, payload.inputs, payload.challengeToken)
                 } else {
-                    flowClient!!.initiate(request.applicationId, request.flowType, attestationToken())
+                    val unit = request.organizationUnitId.takeIf { request.flowType == FlowType.AUTHENTICATION }
+                    boundedFlowInProgress = unit != null
+                    mapOrganizationUnitRefusal(unit) {
+                        flowClient!!.initiate(request.applicationId, request.flowType, attestationToken(), unit)
+                    }
                 }
             establishSessionIfNeeded(response)
             response
@@ -300,6 +362,7 @@ class ThunderIDClient internal constructor(
      */
     fun buildSignInUrl(options: SignInOptions? = null): String {
         val cfg = requireConfig()
+        val unit = options?.organizationUnitId?.also { requireUnitId(it) }
         backend?.let { backend ->
             val redirectUri =
                 cfg.afterSignInUrl
@@ -308,12 +371,20 @@ class ThunderIDClient internal constructor(
                         "afterSignInUrl is required to sign in through the backend",
                     )
             val (_, challenge) = pkceManager.generate()
-            return backend.signInUrl(redirectUri, challenge)
+            pendingOrganizationUnitId = unit
+            return backend.signInUrl(redirectUri, challenge, unit)
+        }
+        if (cfg.pushedAuthorizationRequests) {
+            throw IAMException(
+                ThunderIDErrorCode.UNSUPPORTED_OPERATION,
+                "pushedAuthorizationRequests is on: start sign-in with signIn(options), which pushes the request",
+            )
         }
         val clientId = cfg.clientId ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required for redirect mode")
         val (_, challenge) = pkceManager.generate()
+        pendingOrganizationUnitId = unit
         val params =
-            StringBuilder("${cfg.baseUrl}/oauth2/authorize")
+            StringBuilder(oauthClient!!.authorizeUrl(unit))
                 .append("?response_type=code")
                 .append("&client_id=")
                 .append(clientId)
@@ -330,10 +401,53 @@ class ThunderIDClient internal constructor(
         return params.toString()
     }
 
-    suspend fun handleRedirectCallback(url: String): User {
+    /**
+     * Starts a redirect-mode sign-in and returns the URL for the app to open in a Custom Tab, then hand the
+     * redirect back to [handleRedirectCallback]. It is [buildSignInUrl] that can also push the request: when
+     * `pushedAuthorizationRequests` is on, or the server's metadata sets `require_pushed_authorization_requests`,
+     * the authorization request goes to `/oauth2/par` (RFC 9126) and the URL carries only the returned
+     * `request_uri`. [SignInOptions.organizationUnitId] bounds the sign-in to an organization unit.
+     *
+     * @throws IAMException [ThunderIDErrorCode.INVALID_INPUT] when the server refuses the pushed request.
+     */
+    suspend fun signIn(options: SignInOptions = SignInOptions()): String {
         val cfg = requireConfig()
-        backend?.let { return completeBackendSignIn(it, url) }
+        if (backend != null) return buildSignInUrl(options)
+        val oauth = oauthClient!!
+        val push = cfg.pushedAuthorizationRequests || oauth.metadata()?.requirePushedAuthorizationRequests == true
+        if (!push) return buildSignInUrl(options)
+        val unit = options.organizationUnitId?.also { requireUnitId(it) }
+        val clientId = cfg.clientId ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required for redirect mode")
+        val (_, challenge) = pkceManager.generate()
+        val form =
+            buildMap {
+                put("response_type", "code")
+                put("client_id", clientId)
+                put("redirect_uri", cfg.afterSignInUrl ?: "")
+                put("scope", cfg.scopes.joinToString(" "))
+                put("code_challenge", challenge)
+                put("code_challenge_method", "S256")
+                options.prompt?.let { put("prompt", it) }
+                options.loginHint?.let { put("login_hint", it) }
+                options.fidp?.let { put("fidp", it) }
+            }
+        val requestUri = oauth.pushAuthorizationRequest(form)
+        pendingOrganizationUnitId = unit
+        return "${oauth.authorizeUrl(unit)}?" + OAuthClient.encodeForm(mapOf("client_id" to clientId, "request_uri" to requestUri))
+    }
+
+    suspend fun handleRedirectCallback(url: String): User = completeRedirect(url, switching = false)
+
+    private suspend fun completeRedirect(
+        url: String,
+        switching: Boolean,
+    ): User {
+        val cfg = requireConfig()
+        val unit = pendingOrganizationUnitId
+        pendingOrganizationUnitId = null
+        backend?.let { return completeBackendSignIn(it, url, keepOnFailure = switching, unit = unit) }
         val clientId = cfg.clientId ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required")
+        if (unit != null) return completeBoundedSignIn(cfg, clientId, unit, url)
         val code =
             url.substringAfter("code=").substringBefore("&").takeIf { it.isNotEmpty() }
                 ?: throw IAMException(ThunderIDErrorCode.INVALID_GRANT, "Authorization code missing from callback URL")
@@ -349,11 +463,276 @@ class ThunderIDClient internal constructor(
                 "redirect_uri" to (cfg.afterSignInUrl ?: ""),
                 "code_verifier" to verifier,
             )
-        val tokenResponse: TokenResponse = httpClient!!.post("/oauth2/token", body, requiresAuth = false)
+        val tokenResponse: TokenResponse = oauthClient!!.redeemCode(null, body)
         tokenResponse.idToken?.let { tokenValidator?.validate(it, null) }
         tokenStore!!.save(tokenResponse)
         return getUser()
     }
+
+    /**
+     * Redeems the code of a sign-in bounded to organization unit [unit] at the unit's token endpoint, which
+     * is the only one that redeems it. The previous session is replaced only once the new tokens are in.
+     */
+    private suspend fun completeBoundedSignIn(
+        cfg: ThunderIDConfig,
+        clientId: String,
+        unit: String,
+        url: String,
+    ): User {
+        val params = queryParameters(url)
+        params["error"]?.let { error ->
+            pkceManager.clearVerifier()
+            val serverError = ServerError(error, params["error_description"]?.let { ServerErrorMessage(defaultValue = it) })
+            val code =
+                if (error ==
+                    "unauthorized_client"
+                ) {
+                    ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE
+                } else {
+                    ThunderIDErrorCode.AUTHENTICATION_FAILED
+                }
+            throw IAMException(code, "Sign-in to the organization unit was refused: $error", serverError = serverError)
+        }
+        val code =
+            params["code"]?.takeIf { it.isNotEmpty() }
+                ?: throw IAMException(ThunderIDErrorCode.INVALID_GRANT, "Authorization code missing from callback URL")
+        val verifier =
+            pkceManager.codeVerifier
+                ?: throw IAMException(ThunderIDErrorCode.INVALID_GRANT, "PKCE verifier not found")
+        pkceManager.clearVerifier()
+        val form =
+            mapOf(
+                "grant_type" to "authorization_code",
+                "code" to code,
+                "client_id" to clientId,
+                "redirect_uri" to (cfg.afterSignInUrl ?: ""),
+                "code_verifier" to verifier,
+            )
+        replaceSession(oauthClient!!.redeemCode(unit, form))
+        return getUser()
+    }
+
+    /** Validates [response]'s ID token, then replaces the whole token set with it, so the user is read again. */
+    private suspend fun replaceSession(response: TokenResponse) {
+        response.idToken?.let { tokenValidator?.validate(it, null) }
+        tokenStore!!.replace(response)
+        currentUser = null
+    }
+
+    // MARK: - Organization units
+
+    /**
+     * Lists the organization units the signed-in user can access, from `GET /users/me/ous` with the user's
+     * token: the one the user lives in and every one the user is shared into.
+     */
+    suspend fun getAccessibleOrganizationUnits(
+        options: AccessibleOrganizationUnitsOptions = AccessibleOrganizationUnitsOptions(),
+    ): AccessibleOrganizationUnits {
+        requireInitialized()
+        val query =
+            listOfNotNull(
+                options.scope?.let { "scope=${it.value}" },
+                options.limit?.let { "limit=$it" },
+                options.offset?.let { "offset=$it" },
+            ).joinToString("&")
+        val path = if (query.isEmpty()) "/users/me/ous" else "/users/me/ous?$query"
+        return httpClient!!.get<AccessibleOrganizationUnitsResponse>(path).toModel()
+    }
+
+    /**
+     * The organization unit the signed-in session was decided for, from its `ouId`, `ouHandle` and `ouName`
+     * claims, or `null` when the session carries none or nobody is signed in. It is for display only, never
+     * for an authorization decision: the server decides every request.
+     */
+    suspend fun getCurrentOrganizationUnit(): CurrentOrganizationUnit? {
+        requireInitialized()
+        backend?.let { backend ->
+            val session = runCatching { backend.getSession() }.getOrNull() ?: return null
+            return if (session.isSignedIn) currentOrganizationUnitFrom(session.user) else null
+        }
+        val store = tokenStore ?: return null
+        return listOfNotNull(store.idToken(), store.accessToken())
+            .firstNotNullOfOrNull { currentOrganizationUnitFrom(jwtClaims(it)) }
+    }
+
+    /**
+     * Signs in again bounded to organization unit [ouId]. The server reuses the SSO session when the user can
+     * sign in there, so normally no credentials are asked. On success the client replaces its tokens (the
+     * refresh token is bound to the unit) and reads the user again. On failure the previous session stays as
+     * it was.
+     *
+     * With [SwitchOrganizationUnitOptions.browser], or when sign-in runs on a backend, the switch is a redirect
+     * sign-in through the browser. Otherwise it runs the application's `AUTHENTICATION` flow in embedded mode,
+     * which returns [OrganizationUnitSwitchResult.SignInRequired] when the flow needs the user.
+     *
+     * @throws IAMException [ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE] when the unit does not exist
+     * or the application cannot be used from it; the server does not tell the two apart.
+     */
+    suspend fun switchOrganizationUnit(
+        ouId: String,
+        options: SwitchOrganizationUnitOptions = SwitchOrganizationUnitOptions(),
+    ): OrganizationUnitSwitchResult {
+        val cfg = requireConfig()
+        requireUnitId(ouId)
+        if (backend != null || options.browser != null) {
+            val browser =
+                options.browser
+                    ?: throw IAMException(
+                        ThunderIDErrorCode.INVALID_CONFIGURATION,
+                        "Switching through the backend opens the browser: pass SwitchOrganizationUnitOptions.browser",
+                    )
+            val url = signIn(options.signInOptions.copy(organizationUnitId = ouId))
+            val callback =
+                try {
+                    browser(url)
+                } catch (e: Throwable) {
+                    // Dismissed or failed: forget the switch, so a later callback is not redeemed for it.
+                    pendingOrganizationUnitId = null
+                    pkceManager.clearVerifier()
+                    throw e
+                }
+            return OrganizationUnitSwitchResult.Switched(completeRedirect(callback, switching = true))
+        }
+        val applicationId =
+            options.applicationId ?: cfg.applicationId
+                ?: throw IAMException(
+                    ThunderIDErrorCode.INVALID_CONFIGURATION,
+                    "An embedded switch needs applicationId, or SwitchOrganizationUnitOptions.browser for a redirect switch",
+                )
+        val response =
+            signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, ouId))
+        return when (response.flowStatus) {
+            FlowStatus.COMPLETE -> {
+                OrganizationUnitSwitchResult.Switched(getUser())
+            }
+
+            FlowStatus.ERROR -> {
+                throw IAMException(
+                    ThunderIDErrorCode.AUTHENTICATION_FAILED,
+                    response.failureReason ?: "Sign-in to the organization unit was refused",
+                    serverError = response.error?.code?.let { ServerError(it) },
+                )
+            }
+
+            else -> {
+                OrganizationUnitSwitchResult.SignInRequired(response)
+            }
+        }
+    }
+
+    // MARK: - Backchannel and device authorization
+
+    /**
+     * Starts a client-initiated backchannel authentication (CIBA) request at the server's discovered
+     * `backchannel_authentication_endpoint`, with the configured scopes. The client authenticates as a public
+     * client (`token_endpoint_auth_method: none`), which is the only way an app on a device can: a client
+     * registered with a secret cannot use it from this SDK.
+     *
+     * @throws IAMException [ThunderIDErrorCode.INVALID_INPUT] unless exactly one hint is given, and
+     * [ThunderIDErrorCode.UNSUPPORTED_OPERATION] when the server's metadata names no backchannel endpoint or
+     * sign-in runs on a backend.
+     */
+    suspend fun initiateCIBA(options: CIBAInitiateOptions): CIBAInitiateResponse {
+        val cfg = requireConfig()
+        refuseOnBackend("initiateCIBA")
+        return oauthClient!!.initiateCIBA(requireClientId(cfg), cfg.scopes, options)
+    }
+
+    /**
+     * Polls the token endpoint for [authReqId] with the `urn:openid:params:grant-type:ciba` grant, every
+     * [interval] seconds and five more after each `slow_down`, and stores the tokens as a sign-in does.
+     * Cancel the coroutine to stop polling.
+     *
+     * @throws IAMException [ThunderIDErrorCode.AUTHENTICATION_FAILED] when the user denies the request or it
+     * expires; [IAMException.serverError] carries the OAuth error (`access_denied`, `expired_token`).
+     */
+    suspend fun pollCIBA(
+        authReqId: String,
+        interval: Int,
+    ): TokenResponse {
+        val cfg = requireConfig()
+        refuseOnBackend("pollCIBA")
+        val form =
+            mapOf(
+                "grant_type" to "urn:openid:params:grant-type:ciba",
+                "auth_req_id" to authReqId,
+                "client_id" to requireClientId(cfg),
+            )
+        return oauthClient!!.pollToken(form, interval).also { replaceSession(it) }
+    }
+
+    /**
+     * Starts an OAuth 2.0 device authorization request (RFC 8628) at `/oauth2/device-authorize`, for an app on
+     * an input-constrained device such as Android TV. Show the user [DeviceAuthorization.userCode] and
+     * [DeviceAuthorization.verificationUri], then [pollDeviceAuthorization]. The device code is a credential:
+     * never show or log it.
+     */
+    suspend fun startDeviceAuthorization(): DeviceAuthorization {
+        val cfg = requireConfig()
+        refuseOnBackend("startDeviceAuthorization")
+        return oauthClient!!.startDeviceAuthorization(requireClientId(cfg), cfg.scopes)
+    }
+
+    /**
+     * Polls the token endpoint with the `urn:ietf:params:oauth:grant-type:device_code` grant until the user
+     * approves the device, under the same rules as [pollCIBA], and stores the tokens on success.
+     *
+     * @throws IAMException [ThunderIDErrorCode.AUTHENTICATION_FAILED] when the user denies the device or the
+     * code expires; [IAMException.serverError] carries the OAuth error (`access_denied`, `expired_token`).
+     */
+    suspend fun pollDeviceAuthorization(
+        deviceCode: String,
+        interval: Int,
+    ): TokenResponse {
+        val cfg = requireConfig()
+        refuseOnBackend("pollDeviceAuthorization")
+        val form =
+            mapOf(
+                "grant_type" to "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code" to deviceCode,
+                "client_id" to requireClientId(cfg),
+            )
+        return oauthClient!!.pollToken(form, interval).also { replaceSession(it) }
+    }
+
+    /** [pollDeviceAuthorization] for the request [authorization] started. */
+    suspend fun pollDeviceAuthorization(authorization: DeviceAuthorization): TokenResponse =
+        pollDeviceAuthorization(authorization.deviceCode, authorization.interval)
+
+    /**
+     * Drives one step of the server's `DEVICE_GRANT` flow in embedded mode, so a user approves a device from
+     * this app. A payload without a flow id starts the flow, with the user code the user typed as the
+     * `user_code` input; one with a flow id continues it. When the flow ends, its assertion is relayed to the
+     * server, which approves or denies the device's request. The flow never signs this app in.
+     */
+    suspend fun verifyDeviceCode(
+        payload: EmbeddedSignInPayload,
+        applicationId: String? = null,
+    ): EmbeddedFlowResponse {
+        val cfg = requireConfig()
+        refuseOnBackend("verifyDeviceCode")
+        val flow = flowClient!!
+        val (body, headers) =
+            if (payload.flowId != null) {
+                val submit = flow.submitBody(payload.flowId, payload.actionId, payload.challengeToken).toMutableMap()
+                submit["verbose"] = true
+                if (payload.inputs.isNotEmpty()) submit["inputs"] = payload.inputs
+                submit to emptyMap()
+            } else {
+                val appId =
+                    applicationId ?: cfg.applicationId
+                        ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "applicationId required for verifyDeviceCode")
+                val start = flow.initiateBody(appId, FlowType.DEVICE_GRANT, inputs = payload.inputs)
+                start to (attestationToken()?.let { mapOf("Attestation-Token" to it) } ?: emptyMap())
+            }
+        return DeviceGrantRelay(httpClient!!, apiBaseUrl ?: cfg.baseUrl).execute(body, headers).withErrorAsFailureReason()
+    }
+
+    /** Starts the server's `DEVICE_GRANT` flow with [userCode], the code the device shows. See [verifyDeviceCode]. */
+    suspend fun verifyDeviceCode(
+        userCode: String,
+        applicationId: String? = null,
+    ): EmbeddedFlowResponse = verifyDeviceCode(EmbeddedSignInPayload(inputs = mapOf("user_code" to userCode)), applicationId)
 
     suspend fun signOut(options: SignOutOptions? = null): String {
         requireInitialized()
@@ -371,7 +750,7 @@ class ThunderIDClient internal constructor(
             val clientId = config?.clientId
             if (refreshToken != null && clientId != null) {
                 val body = mapOf("token" to refreshToken, "client_id" to clientId)
-                runCatching { httpClient!!.post<Unit>("/oauth2/revoke", body, requiresAuth = false) }
+                runCatching { oauthClient!!.revoke(body) }
             }
             tokenStore?.clear()
             currentUser = null
@@ -486,7 +865,7 @@ class ThunderIDClient internal constructor(
         requireInitialized()
         refuseOnBackend("exchangeToken")
         val body =
-            mutableMapOf<String, Any>(
+            mutableMapOf(
                 "grant_type" to "urn:ietf:params:oauth:grant-type:token-exchange",
                 "subject_token" to config.subjectToken,
                 "subject_token_type" to config.subjectTokenType,
@@ -494,7 +873,7 @@ class ThunderIDClient internal constructor(
         (this.config?.clientId ?: this.config?.applicationId)?.takeIf { it.isNotEmpty() }?.let { body["client_id"] = it }
         config.requestedTokenType?.let { body["requested_token_type"] = it }
         config.audience?.let { body["audience"] = it }
-        val response: TokenResponse = httpClient!!.post("/oauth2/token", body, requiresAuth = false)
+        val response: TokenResponse = oauthClient!!.requestToken(null, body, "The token exchange was refused")
         tokenStore!!.save(response)
         return response
     }
@@ -561,6 +940,28 @@ class ThunderIDClient internal constructor(
         httpClient!!.post<Unit>("/users/me/update-credentials", mapOf("attributes" to mapOf(attribute to newValue)))
     }
 
+    // MARK: - Authorization Details
+
+    /**
+     * Returns the RFC 9396 authorization details types a client may request, each with the fields it may send
+     * and the changes it may make at the token endpoint. Public: no token is sent. [fetcher] takes precedence
+     * over `ThunderIDConfig.http.fetcher`.
+     */
+    suspend fun getSupportedAuthorizationDetailsTypes(fetcher: ThunderIDFetcher? = null): List<SupportedAuthorizationDetailsType> =
+        authorizationDetailsTypesClient().list(fetcher)
+
+    /** Returns one authorization details type a client may request, by its [type] value. See [getSupportedAuthorizationDetailsTypes]. */
+    suspend fun getSupportedAuthorizationDetailsType(
+        type: String,
+        fetcher: ThunderIDFetcher? = null,
+    ): SupportedAuthorizationDetailsType = authorizationDetailsTypesClient().get(type, fetcher)
+
+    private fun authorizationDetailsTypesClient(): AuthorizationDetailsTypesClient {
+        val cfg = requireConfig()
+        val http = httpClient ?: throw IAMException(ThunderIDErrorCode.SDK_NOT_INITIALIZED, "Call initialize() before using the SDK")
+        return AuthorizationDetailsTypesClient(http, apiBaseUrl ?: cfg.baseUrl, cfg.http.fetcher)
+    }
+
     // MARK: - Flow Meta
 
     suspend fun getFlowMeta(
@@ -593,11 +994,19 @@ class ThunderIDClient internal constructor(
     private suspend fun completeBackendSignIn(
         backend: BackendClient,
         url: String,
+        keepOnFailure: Boolean = false,
+        unit: String? = null,
     ): User {
         val params = queryParameters(url)
         params["error"]?.let {
             pkceManager.clearVerifier()
-            throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "The backend refused sign-in: $it")
+            val code =
+                if (unit != null && it == "unauthorized_client") {
+                    ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE
+                } else {
+                    ThunderIDErrorCode.AUTHENTICATION_FAILED
+                }
+            throw IAMException(code, "The backend refused sign-in: $it", serverError = ServerError(it))
         }
         val code =
             params["session_code"]?.takeIf { it.isNotEmpty() }
@@ -609,7 +1018,7 @@ class ThunderIDClient internal constructor(
         pkceManager.clearVerifier()
         loading = true
         return try {
-            val session = backend.startSession(code, verifier)
+            val session = backend.startSession(code, verifier, keepOnFailure)
             User(session.user.orEmpty()).also { currentUser = it }
         } finally {
             loading = false
@@ -635,6 +1044,54 @@ class ThunderIDClient internal constructor(
                 "$operation is not available when sign-in runs on the backend",
             )
         }
+    }
+
+    private fun requireUnitId(ouId: String) {
+        if (ouId.isBlank()) throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "An organization unit id is required")
+    }
+
+    private fun requireClientId(cfg: ThunderIDConfig): String =
+        cfg.clientId?.takeIf { it.isNotEmpty() }
+            ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required")
+
+    /**
+     * Runs [start], the request that starts a flow bounded to [unit], and reports the server's refusal of the
+     * unit (`FES-1023`: it does not exist, or the application cannot be used from it) as
+     * [ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE].
+     */
+    private suspend fun mapOrganizationUnitRefusal(
+        unit: String?,
+        start: suspend () -> EmbeddedFlowResponse,
+    ): EmbeddedFlowResponse =
+        try {
+            start()
+        } catch (e: IAMException) {
+            if (unit == null || e.serverError?.code != "FES-1023") throw e
+            throw IAMException(
+                ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE,
+                "The organization unit is not accessible to this application",
+                e,
+                e.serverError,
+            )
+        }
+
+    /** A JWT's claims, or `null` when [token] is not one. Reads the payload without verifying the signature. */
+    private fun jwtClaims(token: String): Map<String, Any?>? {
+        val parts = token.split(".")
+        if (parts.size != 3) return null
+        return runCatching {
+            val json =
+                String(
+                    java.util.Base64
+                        .getUrlDecoder()
+                        .decode(parts[1].trimEnd('=')),
+                    Charsets.UTF_8,
+                )
+            val type = object : com.google.gson.reflect.TypeToken<Map<String, Any?>>() {}.type
+            com.google.gson
+                .Gson()
+                .fromJson<Map<String, Any?>>(json, type)
+        }.getOrNull()
     }
 
     private fun requireInitialized() {
@@ -666,7 +1123,10 @@ class ThunderIDClient internal constructor(
         if (response.flowStatus != FlowStatus.COMPLETE || assertion.isNullOrEmpty()) {
             return
         }
-        tokenStore!!.save(TokenResponse(accessToken = assertion, tokenType = "Bearer"))
+        val tokens = TokenResponse(accessToken = assertion, tokenType = "Bearer")
+        // A flow bounded to an organization unit replaces the whole session, as a switch must.
+        if (boundedFlowInProgress) tokenStore!!.replace(tokens) else tokenStore!!.save(tokens)
+        boundedFlowInProgress = false
         try {
             val claims = decodeJwtToken(assertion)
             currentUser = User(claims.filterValues { it != null }.mapValues { it.value as Any })

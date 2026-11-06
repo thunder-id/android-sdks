@@ -15,8 +15,8 @@ import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowStepData
 import dev.thunderid.android.FlowType
 import dev.thunderid.android.ThunderIDClient
-import dev.thunderid.android.auth.FederatedAuthSession
-import dev.thunderid.android.auth.PasskeyClient
+import dev.thunderid.android.api.auth.FederatedAuthSession
+import dev.thunderid.android.api.auth.PasskeyClient
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import io.mockk.coEvery

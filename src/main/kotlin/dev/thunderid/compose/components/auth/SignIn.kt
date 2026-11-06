@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -20,6 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -59,8 +62,8 @@ import dev.thunderid.android.FlowType
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.KeyValuePair
 import dev.thunderid.android.ThunderIDErrorCode
-import dev.thunderid.android.auth.FederatedAuthSession
-import dev.thunderid.android.auth.PasskeyClient
+import dev.thunderid.android.api.auth.FederatedAuthSession
+import dev.thunderid.android.api.auth.PasskeyClient
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.components.auth.buttons.adapters.GitHubButton
@@ -192,13 +195,35 @@ class SignInState : FlowStepState() {
 private fun flattenInputNames(components: List<FlowComponent>): List<String> {
     val result = mutableListOf<String>()
     for (component in components) {
-        if (component.type?.endsWith("_INPUT") == true) {
+        if (component.type?.endsWith("_INPUT") == true || component.type in CHOICE_COMPONENT_TYPES) {
             (component.ref ?: component.id)?.let { result.add(it) }
         }
         component.components?.let { result.addAll(flattenInputNames(it)) }
     }
     return result
 }
+
+/** Component types drawn as a pick rather than a text field: a server `SELECT`, and the Resolve OU step's input. */
+private val CHOICE_COMPONENT_TYPES = setOf("SELECT", "OU_SELECT")
+
+/** How a step's input is drawn. */
+internal enum class FlowFieldKind { TEXT, PASSWORD, CHOICE, ORGANIZATION_UNIT }
+
+/**
+ * Picks how an input of [type] is drawn. An input the server gives [options] for is a pick among them, as a
+ * Resolve OU step offers the organization units a signed-in user can sign in to. An `OU_SELECT` input with no
+ * options is the Resolve OU step before sign-in, where no unit is ever listed: the user types its handle.
+ */
+internal fun flowFieldKind(
+    type: String?,
+    options: List<String>?,
+): FlowFieldKind =
+    when {
+        !options.isNullOrEmpty() -> FlowFieldKind.CHOICE
+        type == "OU_SELECT" -> FlowFieldKind.ORGANIZATION_UNIT
+        type == "PASSWORD_INPUT" -> FlowFieldKind.PASSWORD
+        else -> FlowFieldKind.TEXT
+    }
 
 /**
  * The real Flow Execution API identifies the same node with `ref` on the flat `data.actions`
@@ -255,10 +280,17 @@ fun SignIn(
     modifier: Modifier = Modifier,
     onComplete: (() -> Unit)? = null,
     onError: ((String) -> Unit)? = null,
+    organizationUnitId: String? = null,
 ) {
     val thunderState = LocalThunderID.current
     val i18n = thunderState.i18n
-    BaseSignIn(applicationId = applicationId, modifier = modifier, onComplete = onComplete, onError = onError) { signInState ->
+    BaseSignIn(
+        applicationId = applicationId,
+        modifier = modifier,
+        onComplete = onComplete,
+        onError = onError,
+        organizationUnitId = organizationUnitId,
+    ) { signInState ->
         Column(
             modifier = Modifier.padding(16.dp).exposeTestTagsAsResourceIds(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -281,7 +313,20 @@ fun SignIn(
                 }
             } else {
                 signInState.inputs.forEach { input ->
-                    val isPassword = input.type == "PASSWORD_INPUT"
+                    val kind = flowFieldKind(input.type, input.options)
+                    if (kind == FlowFieldKind.CHOICE || kind == FlowFieldKind.ORGANIZATION_UNIT) {
+                        ChoiceFieldView(
+                            name = input.name,
+                            label = null,
+                            options = input.options.orEmpty(),
+                            kind = kind,
+                            state = signInState,
+                            i18n = i18n,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        return@forEach
+                    }
+                    val isPassword = kind == FlowFieldKind.PASSWORD
                     OutlinedTextField(
                         value = signInState.fieldValue(input.name),
                         onValueChange = { signInState.setField(input.name, it) },
@@ -305,6 +350,17 @@ fun SignIn(
                         modifier = Modifier.fillMaxWidth().testTag("thunderid-action-${action.id ?: action.ref}"),
                     ) {
                         Text(action.label ?: i18n.resolve("signIn.submit"))
+                    }
+                }
+                // A step an executor asks for, such as Resolve OU, has inputs but no actions: its inputs are
+                // submitted on their own.
+                if (signInState.actions.isEmpty() && signInState.inputs.isNotEmpty()) {
+                    Button(
+                        onClick = { signInState.submit("") },
+                        enabled = !signInState.isLoading,
+                        modifier = Modifier.fillMaxWidth().testTag("thunderid-action-submit"),
+                    ) {
+                        Text(i18n.resolve("signIn.submit"))
                     }
                 }
             }
@@ -392,6 +448,26 @@ internal fun FlowStepComponentView(
             ActionComponentView(component = component, state = state, i18n = i18n, modifier = modifier)
         }
 
+        component.type in CHOICE_COMPONENT_TYPES -> {
+            val ref = component.ref ?: component.id
+            if (ref != null) {
+                val options =
+                    state.inputs
+                        .firstOrNull { it.name == ref }
+                        ?.options
+                        .orEmpty()
+                ChoiceFieldView(
+                    name = ref,
+                    label = resolver?.resolve(component.label)?.takeIf { it.isNotBlank() } ?: component.label,
+                    options = options,
+                    kind = flowFieldKind(component.type, options),
+                    state = state,
+                    i18n = i18n,
+                    modifier = modifier,
+                )
+            }
+        }
+
         component.type?.endsWith("_INPUT") == true -> {
             FieldComponentView(component = component, state = state, modifier = modifier)
         }
@@ -445,6 +521,59 @@ private fun FieldComponentView(
             KeyboardOptions(keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text),
         singleLine = true,
     )
+}
+
+/**
+ * Draws a pick among a step's [options], or, for a Resolve OU step before sign-in (no options), a field the
+ * user types the organization unit's handle into. Tagged `thunderid-field-<name>`, and each option
+ * `thunderid-field-<name>-<index>`.
+ */
+@Composable
+private fun ChoiceFieldView(
+    name: String,
+    label: String?,
+    options: List<String>,
+    kind: FlowFieldKind,
+    state: FlowStepState,
+    i18n: ThunderIDI18n,
+    modifier: Modifier = Modifier,
+) {
+    val isUnit = kind == FlowFieldKind.ORGANIZATION_UNIT || name == "ouId" || name == "ouHandle"
+    if (options.isEmpty()) {
+        val text = label ?: i18n.resolve(if (isUnit) "signIn.organizationUnit.label" else "signIn.select.label")
+        OutlinedTextField(
+            value = state.fieldValue(name),
+            onValueChange = { state.setField(name, it) },
+            modifier =
+                modifier
+                    .fillMaxWidth()
+                    .testTag("thunderid-field-$name")
+                    .semantics { contentDescription = name },
+            label = { Text(text) },
+            placeholder = { if (isUnit) Text(i18n.resolve("signIn.organizationUnit.placeholder")) },
+            singleLine = true,
+        )
+        return
+    }
+    val heading = label ?: i18n.resolve(if (isUnit) "signIn.organizationUnit.select" else "signIn.select.label")
+    Column(modifier = modifier.testTag("thunderid-field-$name"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(heading, style = MaterialTheme.typography.titleSmall)
+        options.forEachIndexed { index, option ->
+            val selected = state.fieldValue(name) == option
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .selectable(selected = selected, enabled = !state.isLoading, role = Role.RadioButton) {
+                            state.setField(name, option)
+                        }.testTag("thunderid-field-$name-$index"),
+            ) {
+                RadioButton(selected = selected, onClick = null)
+                Text(option, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -647,13 +776,19 @@ private fun RichTextView(
     )
 }
 
-/** Unstyled base variant (spec §8.3). */
+/**
+ * Unstyled base variant (spec §8.3).
+ *
+ * @param organizationUnitId Bounds the sign-in to this organization unit. It is sent with the request that
+ * starts the flow only.
+ */
 @Composable
 fun BaseSignIn(
     applicationId: String,
     modifier: Modifier = Modifier,
     onComplete: (() -> Unit)? = null,
     onError: ((String) -> Unit)? = null,
+    organizationUnitId: String? = null,
     content: @Composable (SignInState) -> Unit,
 ) {
     val thunderState = LocalThunderID.current
@@ -671,7 +806,8 @@ fun BaseSignIn(
                 val payload =
                     EmbeddedSignInPayload(
                         flowId = signInState.flowId,
-                        actionId = actionId,
+                        // An empty action submits the step's inputs on their own, as an executor's step expects.
+                        actionId = actionId.ifEmpty { null },
                         inputs = signInState.fields(),
                         challengeToken = signInState.challengeToken,
                     )
@@ -701,10 +837,10 @@ fun BaseSignIn(
         }
     }
 
-    LaunchedEffect(applicationId) {
+    LaunchedEffect(applicationId, organizationUnitId) {
         signInState.isLoading = true
         try {
-            val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
+            val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, organizationUnitId)
             val payload = EmbeddedSignInPayload(actionId = "__initiate__")
             val response = thunderState.client.signIn(payload = payload, request = request)
             android.util.Log.d(

@@ -43,6 +43,18 @@ class ServerErrorTest {
     }
 
     @Test
+    fun `reads an OAuth error body with error as the code`() {
+        val error = ServerError.parse("""{"error":"invalid_redirect_uri","error_description":"Redirect URI is invalid"}""")
+
+        assertEquals(
+            ServerError(code = "invalid_redirect_uri", message = ServerErrorMessage(defaultValue = "Redirect URI is invalid")),
+            error,
+        )
+        assertNull(ServerError.parse("""{"error":"invalid_request"}""")?.message)
+        assertNull(ServerError.parse("""{"error":{"code":"FET-1007"}}"""))
+    }
+
+    @Test
     fun `has no server error when the body is not an error envelope`() {
         assertNull(ServerError.parse("Bad gateway"))
         assertNull(ServerError.parse("""{"foo":1}"""))

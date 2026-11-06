@@ -15,7 +15,7 @@ import dev.thunderid.android.ThunderIDBackendEndpoints
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDConfig
 import dev.thunderid.android.ThunderIDEndpoints
-import dev.thunderid.android.auth.FederatedAuthSession
+import dev.thunderid.android.api.auth.FederatedAuthSession
 import dev.thunderid.compose.ThunderIDProvider
 import dev.thunderid.compose.i18n.ThunderIDI18n
 
@@ -70,7 +70,7 @@ object PlaygroundSettings {
             )
 }
 
-/** Translations the playground registers, so the translations check and LanguageSwitcher have a second locale. */
+/** Translations the playground adds to the SDK's own: an fr-FR override, and es-ES, which the SDK does not ship. */
 val PlaygroundBundles: Map<String, Map<String, String>> =
     mapOf(
         "fr-FR" to

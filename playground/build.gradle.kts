@@ -93,4 +93,15 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+
+    // ktlint-cli 1.8.0 pulls in logback 1.3.16, which is affected by CVE-2026-1225,
+    // CVE-2026-9828 and CVE-2026-10532. Only the ktlint tool classpath is affected.
+    constraints {
+        add("ktlint", "ch.qos.logback:logback-classic:1.5.38") {
+            because("CVE-2026-1225, CVE-2026-9828, CVE-2026-10532 in logback < 1.5.34")
+        }
+        add("ktlint", "ch.qos.logback:logback-core:1.5.38") {
+            because("CVE-2026-1225, CVE-2026-9828, CVE-2026-10532 in logback < 1.5.34")
+        }
+    }
 }

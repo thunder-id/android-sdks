@@ -21,6 +21,7 @@ internal data class ResolvedBackendEndpoints(
     val checkSession: String,
     val refresh: String,
     val signOut: String,
+    val ouSwitch: String,
     val proxy: String,
     val token: String,
     val bypassUrls: List<String>,
@@ -77,6 +78,7 @@ internal fun resolveBackendEndpoints(config: ThunderIDConfig): ResolvedBackendEn
         checkSession = resolve("checkSession", endpoints.checkSession, "checksession"),
         refresh = resolve("refresh", endpoints.refresh, "refresh"),
         signOut = resolve("signOut", endpoints.signOut, "signout"),
+        ouSwitch = resolve("ouSwitch", endpoints.ouSwitch, "switch"),
         proxy = resolve("proxy", endpoints.proxy, "proxy").trimEnd('/'),
         token = resolve("token", endpoints.token, "token"),
         bypassUrls = bypassUrls,
@@ -107,3 +109,8 @@ internal data class BackendSession(
         val SIGNED_OUT = BackendSession(isSignedIn = false)
     }
 }
+
+/** The backend's refusal of a switch to another organization unit, with its OAuth `error` when it sent one. */
+internal data class BackendSwitchRefusal(
+    val error: String?,
+)

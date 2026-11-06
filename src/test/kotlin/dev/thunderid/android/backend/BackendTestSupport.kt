@@ -26,6 +26,7 @@ internal const val SESSION = "$BACKEND/api/auth/session"
 internal const val CHECK_SESSION = "$BACKEND/api/auth/checksession"
 internal const val REFRESH = "$BACKEND/api/auth/refresh"
 internal const val SIGN_OUT = "$BACKEND/api/auth/signout"
+internal const val SWITCH = "$BACKEND/api/auth/switch"
 internal const val PROXY = "$BACKEND/api/auth/proxy"
 internal const val TOKEN = "$BACKEND/api/auth/token"
 

@@ -6,6 +6,7 @@ package dev.thunderid.android.api.account
 import com.google.gson.JsonParser
 import dev.thunderid.android.EmbeddedFlowRequestConfig
 import dev.thunderid.android.EmbeddedSignInPayload
+import dev.thunderid.android.FlowSessionData
 import dev.thunderid.android.FlowType
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.InMemoryStorageAdapter
@@ -21,7 +22,12 @@ import dev.thunderid.android.backend.BACKEND
 import dev.thunderid.android.backend.FakeBackend
 import dev.thunderid.android.backend.HANDLE_KEY
 import dev.thunderid.android.backend.REDIRECT_URI
+import dev.thunderid.android.backend.REFRESH
+import dev.thunderid.android.backend.SESSION
+import dev.thunderid.android.backend.SESSION_HANDLE_HEADER
+import dev.thunderid.android.backend.SWITCH
 import dev.thunderid.android.backend.backendConfig
+import dev.thunderid.android.backend.backendError
 import dev.thunderid.android.backend.queryOf
 import dev.thunderid.android.backend.response
 import dev.thunderid.android.backend.signIn
@@ -335,6 +341,7 @@ class OrganizationUnitApiTest {
             assertEquals(assertion, store.accessToken())
             assertNull(store.refreshToken())
             assertEquals("ou-3", client.getCurrentOrganizationUnit()?.id)
+            assertFalse(body.has("sessionData"))
         }
 
     @Test
@@ -408,6 +415,17 @@ class OrganizationUnitApiTest {
     }
 
     @Test
+    fun `the request that starts a flow presents only complete session handles, and none when there are none`() {
+        val flow = FlowExecutionClient(HttpClient(BASE))
+        val sessions = listOf(FlowSessionData("f-1", "h-1", 60L), FlowSessionData("f-2", null))
+        assertEquals(
+            listOf(mapOf("flowIdentifier" to "f-1", "sessionHandle" to "h-1")),
+            flow.initiateBody("app", FlowType.AUTHENTICATION, "ou-1", sessionData = sessions)["sessionData"],
+        )
+        assertFalse(flow.initiateBody("app", FlowType.AUTHENTICATION, "ou-1", sessionData = emptyList()).containsKey("sessionData"))
+    }
+
+    @Test
     fun `an embedded sign-in without a unit keeps the earlier refresh token as before`() =
         runTest {
             client.initialize(config, storage)
@@ -418,6 +436,292 @@ class OrganizationUnitApiTest {
 
             assertFalse(JsonParser.parseString(fake.requests.single().body).asJsonObject.has("ouId"))
             assertEquals("old-refresh", store.refreshToken())
+        }
+
+    // ── Switching, device secret ───────────────────────────────────────────
+
+    private fun signedInWithDeviceSecret() {
+        store.save(
+            TokenResponse(
+                accessToken = jwt("sub" to "u1", "ouId" to "ou-old"),
+                tokenType = "Bearer",
+                refreshToken = "old-refresh",
+                deviceSecret = "ds-1",
+            ),
+        )
+    }
+
+    private fun answerEmbeddedSwitch() {
+        fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE","assertion":"${jwt("sub" to "u1")}"}"""))
+    }
+
+    private fun refuseDeviceSecret(
+        unit: String,
+        error: String,
+    ) {
+        fake.on("POST", "$BASE/ou/$unit/oauth2/token", response(400, """{"error":"$error"}"""))
+    }
+
+    @Test
+    fun `the code exchange's device secret is kept beside the tokens`() =
+        runTest {
+            client.initialize(config, storage)
+            answerUserInfo()
+            fake.on(
+                "POST",
+                "$BASE/oauth2/token",
+                response(200, """{"access_token":"a","token_type":"Bearer","expires_in":3600,"device_secret":"ds-9"}"""),
+            )
+
+            client.buildSignInUrl()
+            client.handleRedirectCallback("$REDIRECT_URI?code=c")
+
+            assertEquals("ds-9", store.deviceSecret())
+        }
+
+    @Test
+    fun `a held device secret is exchanged at the unit's token endpoint, without the browser`() =
+        runTest {
+            client.initialize(config.copy(scopes = listOf("openid", "device_sso")), storage)
+            signedInWithDeviceSecret()
+            store.updateFlowSessions(listOf(FlowSessionData("f-1", "h-1")), null)
+            answerUserInfo()
+            fake.on(
+                "POST",
+                "$BASE/ou/ou-2/oauth2/token",
+                response(200, """{"access_token":"ou2-token","token_type":"Bearer","refresh_token":"ou2-refresh","expires_in":3600}"""),
+            )
+            var opened = false
+
+            val result =
+                client.switchOrganizationUnit(
+                    "ou-2",
+                    SwitchOrganizationUnitOptions(browser = {
+                        opened = true
+                        "$REDIRECT_URI?code=c"
+                    }),
+                )
+
+            val request = fake.to("$BASE/ou/ou-2/oauth2/token").single()
+            assertEquals("application/x-www-form-urlencoded", request.headers["Content-Type"])
+            assertEquals(
+                mapOf(
+                    "grant_type" to "urn:ietf:params:oauth:grant-type:token-exchange",
+                    "subject_token" to "ds-1",
+                    "subject_token_type" to "urn:ietf:params:oauth:token-type:jwt",
+                    "client_id" to "app",
+                    "scope" to "openid device_sso",
+                ),
+                form(request.body),
+            )
+            assertTrue(result is OrganizationUnitSwitchResult.Switched)
+            assertFalse(opened)
+            assertTrue(fake.to("$BASE/flow/execute").isEmpty())
+            assertEquals("ou2-token", store.accessToken())
+            assertEquals("ou2-refresh", store.refreshToken())
+            assertEquals("ds-1", store.deviceSecret())
+            assertEquals(listOf(FlowSessionData("f-1", "h-1")), store.flowSessions())
+        }
+
+    @Test
+    fun `a device secret refused with invalid_grant is dropped and the switch goes through the browser`() =
+        runTest {
+            client.initialize(config, storage)
+            signedInWithDeviceSecret()
+            answerUserInfo()
+            // The exchange is refused, then the bounded code from the browser is redeemed at the same endpoint.
+            fake.on(
+                "POST",
+                "$BASE/ou/ou-2/oauth2/token",
+                response(400, """{"error":"invalid_grant"}"""),
+                response(200, """{"access_token":"b","token_type":"Bearer","expires_in":3600}"""),
+            )
+            var opened: String? = null
+
+            val result =
+                client.switchOrganizationUnit(
+                    "ou-2",
+                    SwitchOrganizationUnitOptions(browser = { url ->
+                        opened = url
+                        "$REDIRECT_URI?code=c2"
+                    }),
+                )
+
+            assertTrue(opened!!.startsWith("$BASE/ou/ou-2/oauth2/authorize?"))
+            assertTrue(result is OrganizationUnitSwitchResult.Switched)
+            assertEquals("authorization_code", form(fake.to("$BASE/ou/ou-2/oauth2/token").last().body)["grant_type"])
+            assertEquals("b", store.accessToken())
+            assertNull(store.deviceSecret())
+        }
+
+    @Test
+    fun `a device secret refused with invalid_request is dropped and the switch runs the embedded flow`() =
+        runTest {
+            client.initialize(config, storage)
+            signedInWithDeviceSecret()
+            answerUserInfo()
+            refuseDeviceSecret("ou-3", "invalid_request")
+            answerEmbeddedSwitch()
+
+            val result = client.switchOrganizationUnit("ou-3")
+
+            assertTrue(result is OrganizationUnitSwitchResult.Switched)
+            assertEquals("ou-3", JsonParser.parseString(fake.to("$BASE/flow/execute").single().body).asJsonObject["ouId"].asString)
+            assertNull(store.deviceSecret())
+        }
+
+    @Test
+    fun `a device secret refused for another reason is kept and the switch goes on as without one`() =
+        runTest {
+            client.initialize(config, storage)
+            signedInWithDeviceSecret()
+            answerUserInfo()
+            refuseDeviceSecret("ou-3", "interaction_required")
+            answerEmbeddedSwitch()
+
+            val result = client.switchOrganizationUnit("ou-3")
+
+            assertTrue(result is OrganizationUnitSwitchResult.Switched)
+            assertEquals(1, fake.to("$BASE/flow/execute").size)
+            assertEquals("ds-1", store.deviceSecret())
+        }
+
+    @Test
+    fun `a unit the application cannot be used from fails the device secret switch at once`() =
+        runTest {
+            client.initialize(config, storage)
+            signedInWithDeviceSecret()
+            refuseDeviceSecret("ou-x", "unauthorized_client")
+            var opened = false
+
+            val error =
+                assertFails(ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE) {
+                    client.switchOrganizationUnit(
+                        "ou-x",
+                        SwitchOrganizationUnitOptions(browser = {
+                            opened = true
+                            "$REDIRECT_URI?code=c"
+                        }),
+                    )
+                }
+
+            assertEquals("unauthorized_client", error.serverError?.code)
+            assertFalse(opened)
+            assertTrue(fake.to("$BASE/flow/execute").isEmpty())
+            assertEquals("old-refresh", store.refreshToken())
+            assertEquals("ds-1", store.deviceSecret())
+        }
+
+    @Test
+    fun `a refused device secret with no path left reports the server's refusal`() =
+        runTest {
+            client.initialize(config.copy(applicationId = null), storage)
+            signedInWithDeviceSecret()
+            refuseDeviceSecret("ou-2", "interaction_required")
+
+            val error = assertFails(ThunderIDErrorCode.INVALID_INPUT) { client.switchOrganizationUnit("ou-2") }
+
+            assertEquals("interaction_required", error.serverError?.code)
+            assertEquals("old-refresh", store.refreshToken())
+        }
+
+    @Test
+    fun `a device secret is not exchanged without a client id`() =
+        runTest {
+            client.initialize(config.copy(clientId = null), storage)
+            signedInWithDeviceSecret()
+            answerUserInfo()
+            answerEmbeddedSwitch()
+
+            client.switchOrganizationUnit("ou-3")
+
+            assertTrue(fake.to("$BASE/ou/ou-3/oauth2/token").isEmpty())
+            assertEquals(1, fake.to("$BASE/flow/execute").size)
+            assertEquals("ds-1", store.deviceSecret())
+        }
+
+    // ── Flow sessions ──────────────────────────────────────────────────────
+
+    @Test
+    fun `an embedded switch presents the unexpired session handles that earlier flow steps returned`() =
+        runTest {
+            client.initialize(config, storage)
+            answerUserInfo()
+            fake.on(
+                "POST",
+                "$BASE/flow/execute",
+                response(
+                    200,
+                    """{"flowStatus":"COMPLETE","assertion":"${jwt("sub" to "u1")}","sessionData":[
+                    {"flowIdentifier":"f-1","sessionHandle":"h-1","expiresIn":3600},{"flowIdentifier":"f-2","sessionHandle":"h-2"}]}""",
+                ),
+                response(200, """{"flowStatus":"COMPLETE","assertion":"${jwt("sub" to "u1", "ouId" to "ou-3")}"}"""),
+            )
+            client.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+            // A session past its expiry is not presented.
+            store.updateFlowSessions(listOf(FlowSessionData("f-old", "h-old", expiresIn = 1L)), null, now = 0L)
+
+            client.switchOrganizationUnit("ou-3")
+
+            val (signInBody, switchBody) = fake.to("$BASE/flow/execute").map { JsonParser.parseString(it.body).asJsonObject }
+            assertFalse(signInBody.has("sessionData"))
+            assertEquals("ou-3", switchBody["ouId"].asString)
+            assertEquals(
+                JsonParser.parseString(
+                    """[{"flowIdentifier":"f-1","sessionHandle":"h-1"},{"flowIdentifier":"f-2","sessionHandle":"h-2"}]""",
+                ),
+                switchBody["sessionData"],
+            )
+        }
+
+    @Test
+    fun `flow steps that end sessions drop them, and sign-up steps keep theirs`() =
+        runTest {
+            client.initialize(config, storage)
+            fake.on(
+                "POST",
+                "$BASE/flow/execute",
+                response(
+                    200,
+                    """{"executionId":"e-1","flowStatus":"INCOMPLETE","sessionData":[
+                    {"flowIdentifier":"f-1","sessionHandle":"h-1"},{"flowIdentifier":"f-2","sessionHandle":"h-2"}]}""",
+                ),
+                response(200, """{"executionId":"e-1","flowStatus":"INCOMPLETE","clearedSessions":["f-1"]}"""),
+                response(
+                    200,
+                    """{"executionId":"e-2","flowStatus":"INCOMPLETE",
+                    "sessionData":[{"flowIdentifier":"f-3","sessionHandle":"h-3"}]}""",
+                ),
+            )
+
+            client.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+            client.signIn(EmbeddedSignInPayload(flowId = "e-1"), EmbeddedFlowRequestConfig("app-id"))
+            assertEquals(listOf(FlowSessionData("f-2", "h-2")), store.flowSessions())
+
+            client.signUp(EmbeddedSignInPayload(flowId = "e-2"))
+            assertEquals(listOf(FlowSessionData("f-2", "h-2"), FlowSessionData("f-3", "h-3")), store.flowSessions())
+        }
+
+    @Test
+    fun `a switch keeps the device secret and the flow sessions, and a sign-out clears them`() =
+        runTest {
+            client.initialize(config, storage)
+            signedInWithDeviceSecret()
+            store.updateFlowSessions(listOf(FlowSessionData("f-1", "h-1")), null)
+            answerUserInfo()
+            refuseDeviceSecret("ou-3", "interaction_required")
+            answerEmbeddedSwitch()
+
+            client.switchOrganizationUnit("ou-3")
+
+            assertNull(store.refreshToken())
+            assertEquals("ds-1", store.deviceSecret())
+            assertEquals(listOf(FlowSessionData("f-1", "h-1")), store.flowSessions())
+
+            client.signOut()
+
+            assertNull(store.deviceSecret())
+            assertTrue(store.flowSessions().isEmpty())
         }
 
     // ── Backend mode ───────────────────────────────────────────────────────
@@ -434,38 +738,72 @@ class OrganizationUnitApiTest {
         }
 
     @Test
-    fun `a backend switch needs a browser, and a refused one keeps the backend session`() =
+    fun `a backend switch posts the unit to the switch endpoint and reads the session again, with no browser`() =
         runTest {
             signIn(client, fake, storage)
-            assertFails(ThunderIDErrorCode.INVALID_CONFIGURATION) { client.switchOrganizationUnit("ou-2") }
+            fake.on("POST", "$SWITCH?ouId=ou+2", response(200, "{}"))
+            fake.on("GET", SESSION, response(200, """{"isSignedIn":true,"user":{"sub":"u1","ouId":"ou 2"}}"""))
 
-            fake.on("POST", "$BACKEND/api/auth/session", response(500))
+            val result = client.switchOrganizationUnit("ou 2", SwitchOrganizationUnitOptions(browser = { throw AssertionError("browser") }))
+
+            assertEquals("ou 2", (result as OrganizationUnitSwitchResult.Switched).user["ouId"])
+            val sent = fake.to("$SWITCH?ouId=ou+2").single()
+            assertEquals("h-1", sent.headers[SESSION_HANDLE_HEADER])
+            assertEquals("ou 2", JsonParser.parseString(sent.body).asJsonObject["ouId"].asString)
+            assertEquals("h-1", storage.retrieve(HANDLE_KEY))
+        }
+
+    @Test
+    fun `a backend switch refreshes an expired session once and switches again`() =
+        runTest {
+            signIn(client, fake, storage)
+            fake.on("POST", "$SWITCH?ouId=ou-2", backendError("session_expired"), response(200, "{}"))
+            fake.on("POST", REFRESH, response(200, "{}"))
+            fake.on("GET", SESSION, response(200, """{"isSignedIn":true,"user":{"sub":"u1","ouId":"ou-2"}}"""))
+
+            val result = client.switchOrganizationUnit("ou-2")
+
+            assertEquals("ou-2", (result as OrganizationUnitSwitchResult.Switched).user["ouId"])
+            assertEquals(2, fake.to("$SWITCH?ouId=ou-2").size)
+            assertEquals(1, fake.to(REFRESH).size)
+        }
+
+    @Test
+    fun `a backend switch the backend refuses keeps the session and does not open the browser`() =
+        runTest {
+            signIn(client, fake, storage)
+            val noBrowser = SwitchOrganizationUnitOptions(browser = { throw AssertionError("browser") })
+            fake.on("POST", "$SWITCH?ouId=ou-2", response(400, """{"error":"unauthorized_client"}"""))
+
+            val refused = assertFails(ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE) { client.switchOrganizationUnit("ou-2", noBrowser) }
+
+            assertEquals("unauthorized_client", refused.serverError?.code)
+            assertEquals("h-1", storage.retrieve(HANDLE_KEY))
+            assertTrue(client.isSignedIn())
+
+            // A backend without a switch endpoint refuses too: the switch never falls back to a sign-in on its own.
+            fake.on("POST", "$SWITCH?ouId=ou-2", response(404))
+            assertFails(ThunderIDErrorCode.AUTHENTICATION_FAILED) { client.switchOrganizationUnit("ou-2", noBrowser) }
+            assertEquals("h-1", storage.retrieve(HANDLE_KEY))
+        }
+
+    @Test
+    fun `a backend switch that needs the user signs in to the unit through the browser`() =
+        runTest {
+            signIn(client, fake, storage)
+            fake.on("POST", "$SWITCH?ouId=ou-2", response(400, """{"error":"interaction_required"}"""))
+
+            val withoutBrowser = assertFails(ThunderIDErrorCode.AUTHENTICATION_FAILED) { client.switchOrganizationUnit("ou-2") }
+            assertEquals("interaction_required", withoutBrowser.serverError?.code)
+
+            // A sign-in the backend refuses keeps the session.
+            fake.on("POST", SESSION, response(500))
             assertFails(ThunderIDErrorCode.AUTHENTICATION_FAILED) {
                 client.switchOrganizationUnit("ou-2", SwitchOrganizationUnitOptions(browser = { "$REDIRECT_URI?session_code=c2" }))
             }
             assertEquals("h-1", storage.retrieve(HANDLE_KEY))
 
-            val refused =
-                assertFails(ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE) {
-                    client.switchOrganizationUnit(
-                        "ou-2",
-                        SwitchOrganizationUnitOptions(browser = { "$REDIRECT_URI?error=unauthorized_client" }),
-                    )
-                }
-            assertEquals("unauthorized_client", refused.serverError?.code)
-            assertEquals("h-1", storage.retrieve(HANDLE_KEY))
-        }
-
-    @Test
-    fun `a backend switch replaces the handle once the new session has started`() =
-        runTest {
-            signIn(client, fake, storage)
-            fake.on(
-                "POST",
-                "$BACKEND/api/auth/session",
-                response(200, """{"handle":"h-2","isSignedIn":true,"user":{"sub":"u1","ouId":"ou-2"}}"""),
-            )
-
+            fake.on("POST", SESSION, response(200, """{"handle":"h-2","isSignedIn":true,"user":{"sub":"u1","ouId":"ou-2"}}"""))
             val result =
                 client.switchOrganizationUnit(
                     "ou-2",
@@ -477,5 +815,19 @@ class OrganizationUnitApiTest {
 
             assertEquals("ou-2", (result as OrganizationUnitSwitchResult.Switched).user["ouId"])
             assertEquals("h-2", storage.retrieve(HANDLE_KEY))
+        }
+
+    @Test
+    fun `a backend switch whose session has ended signs out`() =
+        runTest {
+            signIn(client, fake, storage)
+            // A 401 means the backend has no session to switch, whatever its body says.
+            fake.on("POST", "$SWITCH?ouId=ou-2", response(401, """{"error":"invalid_token"}"""))
+
+            val refused = assertFails(ThunderIDErrorCode.AUTHENTICATION_FAILED) { client.switchOrganizationUnit("ou-2") }
+
+            assertEquals("login_required", refused.serverError?.code)
+            assertNull(storage.retrieve(HANDLE_KEY))
+            assertFalse(client.isSignedIn())
         }
 }

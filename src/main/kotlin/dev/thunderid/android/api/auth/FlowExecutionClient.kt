@@ -6,6 +6,7 @@ package dev.thunderid.android.api.auth
 import com.google.gson.Gson
 import com.google.gson.JsonParseException
 import dev.thunderid.android.EmbeddedFlowResponse
+import dev.thunderid.android.FlowSessionData
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowType
 import dev.thunderid.android.IAMException
@@ -26,8 +27,9 @@ internal class FlowExecutionClient(
         attestationToken: String? = null,
         organizationUnitId: String? = null,
         inputs: Map<String, String>? = null,
+        sessionData: List<FlowSessionData>? = null,
     ): EmbeddedFlowResponse {
-        val body = initiateBody(applicationId, flowType, organizationUnitId, inputs)
+        val body = initiateBody(applicationId, flowType, organizationUnitId, inputs, sessionData)
         return httpClient
             .post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false, headers = attestationTokenHeaders(attestationToken))
             .withErrorAsFailureReason()
@@ -110,13 +112,15 @@ internal class FlowExecutionClient(
 
     /**
      * The request that starts a flow. `ouId` bounds an `AUTHENTICATION` flow to an organization unit; the
-     * server refuses it on any other request, so it is never sent on a continuation.
+     * server refuses it on any other request, so it is never sent on a continuation. [sessionData] presents
+     * kept SSO session handles, so the server can reuse a session without its cookie.
      */
     internal fun initiateBody(
         applicationId: String,
         flowType: FlowType,
         organizationUnitId: String? = null,
         inputs: Map<String, String>? = null,
+        sessionData: List<FlowSessionData>? = null,
     ): Map<String, Any> {
         val body =
             mutableMapOf<String, Any>(
@@ -126,6 +130,13 @@ internal class FlowExecutionClient(
             )
         if (organizationUnitId != null && flowType == FlowType.AUTHENTICATION) body["ouId"] = organizationUnitId
         if (inputs != null) body["inputs"] = inputs
+        val sessions =
+            sessionData.orEmpty().mapNotNull { session ->
+                val id = session.flowIdentifier?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val handle = session.sessionHandle?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                mapOf("flowIdentifier" to id, "sessionHandle" to handle)
+            }
+        if (sessions.isNotEmpty()) body["sessionData"] = sessions
         return body
     }
 

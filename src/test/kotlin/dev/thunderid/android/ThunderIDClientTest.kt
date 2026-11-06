@@ -173,6 +173,59 @@ class ThunderIDClientTest {
         assertNull(store.accessToken())
     }
 
+    @Test
+    fun `TokenStore replace keeps the device secret and flow sessions, and clear removes them`() {
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
+        store.save(TokenResponse(accessToken = "tok", tokenType = "Bearer", refreshToken = "r1", deviceSecret = "ds-1"))
+        store.updateFlowSessions(listOf(FlowSessionData("f-1", "h-1")), null)
+
+        store.replace(TokenResponse(accessToken = "tok2", tokenType = "Bearer"))
+
+        assertNull(store.refreshToken())
+        assertEquals("ds-1", store.deviceSecret())
+        assertEquals(listOf(FlowSessionData("f-1", "h-1")), store.flowSessions())
+
+        store.clear()
+
+        assertNull(store.deviceSecret())
+        assertTrue(store.flowSessions().isEmpty())
+    }
+
+    @Test
+    fun `TokenStore merges flow sessions by flow, drops cleared ones and skips expired ones`() {
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
+        store.updateFlowSessions(listOf(FlowSessionData("f-1", "h-1", 60L), FlowSessionData("f-2", "h-2")), null, now = 1_000L)
+        // A step that names neither leaves the kept sessions as they are.
+        store.updateFlowSessions(null, null, now = 1_000L)
+        store.updateFlowSessions(emptyList(), emptyList(), now = 1_000L)
+        assertEquals(listOf(FlowSessionData("f-1", "h-1"), FlowSessionData("f-2", "h-2")), store.flowSessions(now = 1_000L))
+
+        store.updateFlowSessions(listOf(FlowSessionData("f-1", "h-1b", 60L)), listOf("f-2"), now = 2_000L)
+
+        assertEquals(listOf(FlowSessionData("f-1", "h-1b")), store.flowSessions(now = 61_999L))
+        assertTrue(store.flowSessions(now = 62_000L).isEmpty())
+
+        store.updateFlowSessions(null, listOf("f-1"))
+        assertNull(storage.retrieve("thunder.flow_sessions"))
+    }
+
+    @Test
+    fun `TokenStore ignores unreadable flow sessions and incomplete ones`() {
+        val store =
+            dev.thunderid.android.token
+                .TokenStore(storage)
+        storage.store("thunder.flow_sessions", "not json")
+        assertTrue(store.flowSessions().isEmpty())
+
+        val sessions = listOf(FlowSessionData("f-1", null), FlowSessionData(null, "h-2"), FlowSessionData("f-3", "h-3"))
+        store.updateFlowSessions(sessions, null)
+        assertEquals(listOf(FlowSessionData("f-3", "h-3")), store.flowSessions())
+    }
+
     // isLoading
 
     @Test

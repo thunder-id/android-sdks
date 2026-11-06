@@ -36,6 +36,7 @@ class BackendEndpointsTest {
                 checkSession = "$BACKEND/api/auth/checksession",
                 refresh = "$BACKEND/api/auth/refresh",
                 signOut = "$BACKEND/api/auth/signout",
+                ouSwitch = "$BACKEND/api/auth/switch",
                 proxy = "$BACKEND/api/auth/proxy",
                 token = "$BACKEND/api/auth/token",
                 bypassUrls = emptyList(),
@@ -57,11 +58,13 @@ class BackendEndpointsTest {
                             proxy = "/gateway/api/",
                             token = "/gateway/token",
                             bypass = ThunderIDBackendBypass(urls = listOf("$DATA_PLANE/"), attachToken = false),
+                            ouSwitch = "/gateway/switch",
                         ),
                 ).copy(baseUrl = "$BACKEND/"),
             )!!
 
         assertEquals("$BACKEND/gateway/signin", resolved.signIn)
+        assertEquals("$BACKEND/gateway/switch", resolved.ouSwitch)
         assertEquals("$BACKEND/gateway/api", resolved.proxy)
         assertEquals("$BACKEND/gateway/token", resolved.token)
         assertEquals("$BACKEND/api/auth/signout", resolved.signOut)

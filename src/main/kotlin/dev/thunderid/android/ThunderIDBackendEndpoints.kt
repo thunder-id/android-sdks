@@ -31,6 +31,11 @@ package dev.thunderid.android
  * counting as activity, so the SDK can poll it. Defaults to `/api/auth/checksession`.
  * @property refresh Refreshes the session. Defaults to `/api/auth/refresh`.
  * @property signOut Ends the session. Defaults to `/api/auth/signout`.
+ * @property ouSwitch Switches the session to another organization unit, with no browser. The SDK sends
+ * `POST {ouSwitch}?ouId=<unit id>` with the same unit as a JSON body, `{"ouId": "<unit id>"}`, and reads the
+ * session again on success. A refusal answers with an OAuth `error` in a JSON body; when that error says the
+ * user has to sign in (`interaction_required`, `login_required`, …), or the answer is `401`, the SDK signs in
+ * to the unit through [signIn] instead. Defaults to `/api/auth/switch`.
  * @property proxy Prefix of the API proxy. Requests under [apiBaseUrl] are sent through it. Defaults to
  * `/api/auth/proxy`.
  * @property token Issues the access token for [bypass], as an OAuth token response without a refresh
@@ -47,6 +52,7 @@ data class ThunderIDBackendEndpoints(
     val proxy: String? = null,
     val token: String? = null,
     val bypass: ThunderIDBackendBypass = ThunderIDBackendBypass(),
+    val ouSwitch: String? = null,
 )
 
 /**

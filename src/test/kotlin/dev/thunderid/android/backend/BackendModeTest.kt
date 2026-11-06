@@ -126,6 +126,23 @@ class BackendModeTest {
         }
 
     @Test
+    fun `attribute verification goes to the API base, through the proxy`() =
+        runTest {
+            signIn(client, fake, storage)
+            fake.on("POST", "$PROXY/flow/execute", response(200, """{"executionId":"exec-1","flowStatus":"INCOMPLETE"}"""))
+
+            client.verifyAttribute("email")
+            client.verifyAttribute(EmbeddedSignInPayload(flowId = "exec-1"))
+
+            val proxied = fake.to("$PROXY/flow/execute")
+            assertEquals(2, proxied.size)
+            proxied.forEach {
+                assertEquals("h-1", it.headers[SESSION_HANDLE_HEADER])
+                assertNull(it.headers["Authorization"])
+            }
+        }
+
+    @Test
     fun `management calls go to the API base, through the proxy`() =
         runTest {
             signIn(client, fake, storage)

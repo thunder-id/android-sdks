@@ -99,17 +99,19 @@ internal class HttpClient(
      * Sends an authenticated request to an absolute [url], which may live on a different host from
      * `baseUrl`. When [fetcher] is set it replaces the built-in transport for this request; the access
      * token is already attached to the request it receives.
+     * [responseError] can replace the default error for a failed HTTP response.
      */
     suspend inline fun <reified T : Any> send(
         method: String,
         url: String,
         jsonBody: String? = null,
         fetcher: ThunderIDFetcher? = null,
+        noinline responseError: ((ThunderIDHttpResponse) -> IAMException?)? = null,
     ): T {
         if (!url.startsWith("https://")) {
             throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "Request URL must use HTTPS")
         }
-        return parseResponse(execute(method, url, jsonBody, true, emptyMap(), fetcher))
+        return parseResponse(execute(method, url, jsonBody, true, emptyMap(), fetcher, responseError))
     }
 
     /**
@@ -124,10 +126,12 @@ internal class HttpClient(
         requiresAuth: Boolean,
         headers: Map<String, String>,
         fetcher: ThunderIDFetcher?,
+        responseError: ((ThunderIDHttpResponse) -> IAMException?)? = null,
     ): String {
         backendRouter?.let { router ->
             val requestHeaders = mapOf("Content-Type" to "application/json", "Accept" to "application/json") + headers
-            return handleResponse(router(ThunderIDHttpRequest(method, url, requestHeaders, jsonBody), fetcher))
+            val request = ThunderIDHttpRequest(method, url, requestHeaders, jsonBody)
+            return handleResponse(router(request, fetcher), responseError)
         }
         val requestHeaders =
             buildMap {
@@ -143,7 +147,7 @@ internal class HttpClient(
             }
         val request = ThunderIDHttpRequest(method, url, requestHeaders, jsonBody)
         val response = fetcher?.fetch(request) ?: defaultTransport?.fetch(request) ?: transport(request)
-        return handleResponse(response)
+        return handleResponse(response, responseError)
     }
 
     private suspend fun transport(
@@ -194,9 +198,13 @@ internal class HttpClient(
             ThunderIDHttpResponse(statusCode, responseBody)
         }
 
-    private fun handleResponse(response: ThunderIDHttpResponse): String {
+    private fun handleResponse(
+        response: ThunderIDHttpResponse,
+        responseError: ((ThunderIDHttpResponse) -> IAMException?)?,
+    ): String {
         val statusCode = response.statusCode
         if (statusCode in 200..299) return response.body
+        responseError?.invoke(response)?.let { throw it }
         // The server's error envelope, when the body is one, rides on every error so a caller can map the
         // server's own code. The SDK's codes below stay what they were.
         val serverError = ServerError.parse(response.body)

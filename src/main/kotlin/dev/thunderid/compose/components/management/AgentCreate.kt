@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.AgentOwner
 import dev.thunderid.android.api.management.CreateAgentRequest
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.rememberCreateAgent
@@ -117,7 +118,7 @@ fun BaseAgentCreate(
  * project's root organization unit, or, with no project chosen, to the signed-in user's organization unit. Offers
  * the agent types the server lists.
  *
- * @param owner The identifier of the agent's owner, if any.
+ * @param owner The person accountable for the agent, sent as given. The server chooses one when it is `null`.
  * @param onCreated Receives the agent as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseAgentCreate].
  */
@@ -125,7 +126,7 @@ fun BaseAgentCreate(
 fun AgentCreate(
     modifier: Modifier = Modifier,
     ouId: String? = null,
-    owner: String? = null,
+    owner: AgentOwner? = null,
     onCreated: ((Agent) -> Unit)? = null,
     onCancel: (() -> Unit)? = null,
     title: String? = null,

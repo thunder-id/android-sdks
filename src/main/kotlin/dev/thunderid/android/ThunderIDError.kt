@@ -49,6 +49,9 @@ enum class ThunderIDErrorCode(
     CONFIRMATION_CODE_INVALID("CONFIRMATION_CODE_INVALID"),
     CONFIRMATION_CODE_EXPIRED("CONFIRMATION_CODE_EXPIRED"),
 
+    // Verification: the server refused a self user attribute verification (an `ERROR` step or an HTTP 4xx).
+    VERIFICATION_FAILED("VERIFICATION_FAILED"),
+
     // Passkey / WebAuthn
     PASSKEY_NOT_SUPPORTED("PASSKEY_NOT_SUPPORTED"),
     PASSKEY_CANCELLED("PASSKEY_CANCELLED"),
@@ -116,7 +119,12 @@ data class ServerError(
          * a plain string becomes its [ServerErrorMessage.defaultValue]. An OAuth 2.0 error body (`error`,
          * `error_description`) is read too, with `error` as the code and `error_description` as the message.
          */
-        fun parse(body: String?): ServerError? {
+        fun parse(body: String?): ServerError? = parse(body, allowOAuth = true)
+
+        internal fun parse(
+            body: String?,
+            allowOAuth: Boolean,
+        ): ServerError? {
             if (body.isNullOrBlank()) return null
             val json =
                 runCatching { JsonParser.parseString(body) }
@@ -126,7 +134,7 @@ data class ServerError(
                     ?: return null
             val code =
                 json.get("code")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
-                    ?: return oauthError(json)
+                    ?: return if (allowOAuth) oauthError(json) else null
             return ServerError(
                 code = code.asString,
                 message = message(json.get("message")),

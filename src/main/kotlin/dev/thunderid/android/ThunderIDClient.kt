@@ -940,6 +940,66 @@ class ThunderIDClient internal constructor(
         httpClient!!.post<Unit>("/users/me/update-credentials", mapOf("attributes" to mapOf(attribute to newValue)))
     }
 
+    // MARK: - Self user attribute verification
+
+    /**
+     * Starts verifying one of the signed-in user's own attributes, such as `email`, by running the
+     * `SELF` flow named by [handle]. The flow sends a code or a link to the attribute's current
+     * value; continue it with the other [verifyAttribute] until the step is
+     * [FlowStatus.COMPLETE], which means the server recorded the verification. Read the result from
+     * [UserProfile.verifiedAttributes].
+     *
+     * The request goes to `/flow/execute` on the API base (`endpoints.backend.apiBaseUrl`, else `baseUrl`)
+     * with the signed-in user's access token, from which the server takes the user, and no user or
+     * application ID.
+     *
+     * @throws IAMException [ThunderIDErrorCode.INVALID_INPUT] without sending anything when [handle] or
+     * [attribute] is blank; [ThunderIDErrorCode.VERIFICATION_FAILED] when the server refuses the request
+     * (an `ERROR` step, or a 400, 403, 404 or 409 with the server's error), without the response body;
+     * [ThunderIDErrorCode.AUTHENTICATION_FAILED] when the server does not accept the user's token.
+     */
+    suspend fun verifyAttribute(
+        attribute: String,
+        handle: String = AttributeVerification.DEFAULT_FLOW_HANDLE,
+    ): EmbeddedFlowResponse {
+        val cfg = requireConfig()
+        if (handle.isBlank()) throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "A new SELF flow needs a handle")
+        if (attribute.isBlank()) throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "The attribute to verify is required")
+        return flowClient!!.startSelfFlow(
+            selfFlowUrl(cfg),
+            handle,
+            mapOf(AttributeVerification.ATTRIBUTE_INPUT to attribute),
+        )
+    }
+
+    /**
+     * Continues an attribute verification started by the other [verifyAttribute] with the step the
+     * user submitted: [EmbeddedSignInPayload.flowId] is the step's execution ID. Sent the same way, with
+     * the access token.
+     *
+     * @throws IAMException [ThunderIDErrorCode.INVALID_INPUT] without sending anything when [payload] has
+     * no execution ID; [ThunderIDErrorCode.VERIFICATION_FAILED] when the server refuses it, as for the start.
+     */
+    suspend fun verifyAttribute(payload: EmbeddedSignInPayload): EmbeddedFlowResponse {
+        val cfg = requireConfig()
+        val flowId =
+            payload.flowId?.takeIf { it.isNotBlank() }
+                ?: throw IAMException(
+                    ThunderIDErrorCode.INVALID_INPUT,
+                    "A continuation needs the step's execution ID; start with verifyAttribute(attribute)",
+                )
+        return flowClient!!.continueSelfFlow(
+            selfFlowUrl(cfg),
+            flowId,
+            payload.actionId,
+            payload.inputs,
+            payload.challengeToken,
+        )
+    }
+
+    // On the API base, like the profile, so backend mode sends it through the proxy.
+    private fun selfFlowUrl(cfg: ThunderIDConfig) = "${apiBaseUrl ?: cfg.baseUrl}/flow/execute"
+
     // MARK: - Authorization Details
 
     /**

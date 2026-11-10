@@ -929,15 +929,18 @@ class ThunderIDClient internal constructor(
     /**
      * Changes one of the signed-in user's own credentials via `POST /users/me/update-credentials`.
      *
-     * The self-service write path does not verify the account's existing value today, so this
-     * call collects only the new value, matching the React/Vue SDKs.
+     * Changing a credential the user already holds needs its [currentValue]. A user setting a
+     * credential for the first time has none to send.
      */
     suspend fun updateUserCredentials(
         attribute: String = "password",
+        currentValue: String? = null,
         newValue: String,
     ) {
         requireInitialized()
-        httpClient!!.post<Unit>("/users/me/update-credentials", mapOf("attributes" to mapOf(attribute to newValue)))
+        val body = mutableMapOf("name" to attribute, "newValue" to newValue)
+        if (!currentValue.isNullOrEmpty()) body["currentValue"] = currentValue
+        httpClient!!.post<Unit>("/users/me/update-credentials", body)
     }
 
     // MARK: - Self user attribute verification

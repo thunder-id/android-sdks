@@ -76,11 +76,13 @@ internal object FrFrStrings {
             "changeCredential.heading" to "Modifier {credential}",
             "changeCredential.description" to
                 "Choisissez un {credentialLower} robuste et ne le réutilisez pas pour d'autres comptes.",
+            "changeCredential.current.label" to "{credential} actuel",
             "changeCredential.new.label" to "Nouveau {credential}",
             "changeCredential.confirm.label" to "Confirmer le nouveau {credential}",
             "changeCredential.submit" to "Modifier {credential}",
             "changeCredential.success" to "Votre {credentialLower} a été mis à jour.",
             "changeCredential.mismatch.error" to "Les {credentialLower}s ne correspondent pas.",
+            "changeCredential.current.error" to "Votre {credentialLower} actuel est incorrect.",
             "changeCredential.new.invalid.error" to "Ceci ne respecte pas le format requis.",
             "changeCredential.requirements.pattern" to "Doit respecter le format requis.",
             "changeCredential.generic.error" to

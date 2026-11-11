@@ -38,6 +38,7 @@ internal object TeInStrings {
             "signUp.submit" to "ఖాతాను సృష్టించండి",
             "signUp.loading" to "ఖాతా సృష్టించబడుతోంది…",
             "signUp.federatedError" to "ఫెడరేటెడ్ సైన్ అప్‌ను ప్రారంభించలేకపోయాము",
+            "flow.expired.restarted" to "మీ సెషన్ గడువు ముగిసినందున, మేము మళ్లీ ప్రారంభించాము.",
             "signOut.button" to "సైన్ అవుట్ చేయండి",
             "signOut.loading" to "సైన్ అవుట్ అవుతోంది…",
             "callback.loading" to "సైన్ ఇన్ పూర్తవుతోంది…",

@@ -29,6 +29,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,7 +73,10 @@ import dev.thunderid.compose.components.auth.buttons.adapters.GoogleButton
 import dev.thunderid.compose.components.auth.buttons.adapters.OutlinedTriggerButton
 import dev.thunderid.compose.components.auth.buttons.adapters.PasskeyButton
 import dev.thunderid.compose.components.auth.flow.FlowErrorBanner
+import dev.thunderid.compose.components.auth.flow.FlowExpiry
+import dev.thunderid.compose.components.auth.flow.FlowNoticeBanner
 import dev.thunderid.compose.components.auth.flow.KeyValueList
+import dev.thunderid.compose.components.auth.flow.rememberFlowExpiry
 import dev.thunderid.compose.components.exposeTestTagsAsResourceIds
 import dev.thunderid.compose.i18n.FlowTemplateResolver
 import dev.thunderid.compose.i18n.ThunderIDI18n
@@ -113,6 +117,11 @@ abstract class FlowStepState internal constructor() {
     var error by mutableStateOf<String?>(null)
         internal set
 
+    /** Whether the flow was started again because the previous one expired. Clears once the user acts on the new flow. */
+    var isFlowRestarted by mutableStateOf(false)
+        internal set
+
+    internal var flowExpiry: FlowExpiry? = null
     internal var flowId: String? = null
     internal var challengeToken: String? = null
     internal var onSubmit: (String) -> Unit = {}
@@ -140,7 +149,29 @@ abstract class FlowStepState internal constructor() {
         fieldValues.clear()
     }
 
-    fun submit(actionId: String) = onSubmit(actionId)
+    fun submit(actionId: String) {
+        isFlowRestarted = false
+        onSubmit(actionId)
+    }
+
+    /** Clears the expired flow before it starts again, and notes that it did. */
+    internal fun prepareRestart() {
+        flowId = null
+        challengeToken = null
+        inputs = emptyList()
+        actions = emptyList()
+        components = emptyList()
+        additionalData = emptyMap()
+        error = null
+        isFlowRestarted = true
+    }
+
+    /** Whether [error] reports a step the server refused since the flow expired, which starts the flow again. */
+    internal fun expireIfFlowExpired(error: Exception): Boolean {
+        if (error !is IAMException || error.code != ThunderIDErrorCode.FLOW_EXPIRED) return false
+        flowExpiry?.expire()
+        return true
+    }
 
     /** The i18n namespace (`signIn`/`signUp`) for fallback labels and messages. */
     internal abstract val i18nPrefix: String
@@ -299,6 +330,9 @@ fun SignIn(
             modifier = Modifier.padding(16.dp).exposeTestTagsAsResourceIds(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (signInState.isFlowRestarted) {
+                FlowNoticeBanner(message = i18n.resolve("flow.expired.restarted"))
+            }
             val error = signInState.error
             if (error != null) {
                 // An error response carries no UI of its own — the previous step's
@@ -835,6 +869,12 @@ fun BaseSignIn(
     val scope = rememberCoroutineScope()
     val signInState = remember { SignInState() }
     val passkeyClient = remember { PasskeyClient() }
+    var restarts by remember { mutableIntStateOf(0) }
+    signInState.flowExpiry =
+        rememberFlowExpiry {
+            signInState.prepareRestart()
+            restarts++
+        }
 
     signInState.onSubmit = { actionId ->
         scope.launch {
@@ -866,6 +906,7 @@ fun BaseSignIn(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (signInState.expireIfFlowExpired(e)) return@launch
                 android.util.Log.e("SignInFlow", "Sign-in submit failed (${diagnosticLabel(e)})")
                 signInState.error = e.message
                 onError?.invoke(e.message ?: "Sign-in failed")
@@ -876,7 +917,7 @@ fun BaseSignIn(
         }
     }
 
-    LaunchedEffect(applicationId, organizationUnitId) {
+    LaunchedEffect(applicationId, organizationUnitId, restarts) {
         signInState.isLoading = true
         try {
             val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, organizationUnitId)
@@ -931,6 +972,7 @@ internal suspend fun handleSignInResponse(
     onComplete: (() -> Unit)?,
     onError: ((String) -> Unit)?,
 ) {
+    signInState.flowExpiry?.track(response)
     when (response.flowStatus) {
         FlowStatus.COMPLETE -> {
             signInState.clearFields()

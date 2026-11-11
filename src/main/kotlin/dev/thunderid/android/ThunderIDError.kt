@@ -30,6 +30,9 @@ enum class ThunderIDErrorCode(
     INVALID_GRANT("INVALID_GRANT"),
     CONSENT_REQUIRED("CONSENT_REQUIRED"),
 
+    /** The embedded flow execution expired, or already ended, so the server refused the step. The flow has to start again. */
+    FLOW_EXPIRED("FLOW_EXPIRED"),
+
     /**
      * The organization unit a sign-in or switch named does not exist, or the application cannot be used
      * from it. The server does not tell the two apart (`unauthorized_client`, or `FES-1023` for an embedded

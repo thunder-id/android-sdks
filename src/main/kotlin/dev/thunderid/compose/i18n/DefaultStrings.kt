@@ -22,6 +22,7 @@ object DefaultStrings {
             "signUp.submit" to "Create account",
             "signUp.loading" to "Creating account…",
             "signUp.federatedError" to "Could not start federated sign-up",
+            "flow.expired.restarted" to "Your session expired, so we started again.",
             "signOut.button" to "Sign out",
             "signOut.loading" to "Signing out…",
             "callback.loading" to "Completing sign-in…",

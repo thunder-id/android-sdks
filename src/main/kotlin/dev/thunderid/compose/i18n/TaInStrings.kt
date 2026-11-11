@@ -38,6 +38,7 @@ internal object TaInStrings {
             "signUp.submit" to "கணக்கை உருவாக்கு",
             "signUp.loading" to "கணக்கு உருவாக்கப்படுகிறது…",
             "signUp.federatedError" to "கூட்டமைப்பு பதிவைத் தொடங்க முடியவில்லை",
+            "flow.expired.restarted" to "உங்கள் அமர்வு காலாவதியானதால், மீண்டும் தொடங்கினோம்.",
             "signOut.button" to "வெளியேறு",
             "signOut.loading" to "வெளியேறுகிறது…",
             "callback.loading" to "உள்நுழைவு நிறைவு செய்யப்படுகிறது…",

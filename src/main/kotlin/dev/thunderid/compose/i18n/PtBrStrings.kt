@@ -38,6 +38,7 @@ internal object PtBrStrings {
             "signUp.submit" to "Criar conta",
             "signUp.loading" to "Criando conta…",
             "signUp.federatedError" to "Não foi possível iniciar o cadastro federado",
+            "flow.expired.restarted" to "Sua sessão expirou, então começamos de novo.",
             "signOut.button" to "Sair",
             "signOut.loading" to "Saindo…",
             "callback.loading" to "Concluindo o login…",

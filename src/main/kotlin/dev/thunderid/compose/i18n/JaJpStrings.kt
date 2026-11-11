@@ -38,6 +38,7 @@ internal object JaJpStrings {
             "signUp.submit" to "アカウントを作成",
             "signUp.loading" to "アカウントを作成しています…",
             "signUp.federatedError" to "フェデレーションサインアップを開始できませんでした",
+            "flow.expired.restarted" to "セッションの有効期限が切れたため、最初からやり直しました。",
             "signOut.button" to "ログアウト",
             "signOut.loading" to "ログアウトしています…",
             "callback.loading" to "ログインを完了しています…",

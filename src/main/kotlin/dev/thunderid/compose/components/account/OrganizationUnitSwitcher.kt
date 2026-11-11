@@ -10,9 +10,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,12 +33,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.ThunderIDErrorCode
 import dev.thunderid.android.api.account.AccessibleOrganizationUnit
 import dev.thunderid.android.api.account.AccessibleOrganizationUnits
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
+import dev.thunderid.android.api.account.CurrentOrganizationUnit
 import dev.thunderid.android.api.account.OrganizationUnitScope
 import dev.thunderid.android.api.auth.OrganizationUnitSwitchResult
 import dev.thunderid.android.api.auth.SwitchOrganizationUnitOptions
@@ -53,6 +64,7 @@ import kotlinx.coroutines.launch
  * @property onPageChange Loads the page that starts at the given offset.
  * @property switchingId The unit a switch is in progress to.
  * @property onSwitch Switches to a unit, or hands it to the app's `onSelect`.
+ * @property currentName The name of the current unit, from the page or else the session, or `null` when unknown.
  */
 data class OrganizationUnitSwitcherState(
     val organizationUnits: List<AccessibleOrganizationUnit>,
@@ -65,11 +77,13 @@ data class OrganizationUnitSwitcherState(
     val onPageChange: (offset: Int) -> Unit,
     val switchingId: String?,
     val onSwitch: (AccessibleOrganizationUnit) -> Unit,
+    val currentName: String? = null,
 )
 
 /**
  * Loads the accessible units and switches between them, independently of Compose so it can be driven and
- * tested on its own. [switch] returns `null` when the app took the selection over.
+ * tested on its own. [switch] returns `null` when the app took the selection over. [session] reads the
+ * session's own unit, which names the current unit when the page does not list it.
  */
 @Stable
 internal class OrganizationUnitSwitcherController(
@@ -78,6 +92,7 @@ internal class OrganizationUnitSwitcherController(
     val limit: Int,
     private val load: suspend (AccessibleOrganizationUnitsOptions) -> AccessibleOrganizationUnits,
     private val switch: suspend (AccessibleOrganizationUnit) -> OrganizationUnitSwitchResult?,
+    private val session: suspend () -> CurrentOrganizationUnit? = { null },
 ) {
     var page by mutableStateOf(AccessibleOrganizationUnits())
         private set
@@ -89,10 +104,18 @@ internal class OrganizationUnitSwitcherController(
         private set
     var switchingId by mutableStateOf<String?>(null)
         private set
+    private var sessionUnit by mutableStateOf<CurrentOrganizationUnit?>(null)
+
+    /** The unit the session is in: the one the page names, else the session's own. */
+    val current: String? get() = page.current ?: sessionUnit?.id
+
+    /** The session's name for [current], for when the page does not list it. */
+    val sessionName: String? get() = sessionUnit?.takeIf { it.id == current }?.let { it.name ?: it.handle }
 
     suspend fun reload(newOffset: Int = offset) {
         isLoading = true
         try {
+            sessionUnit = readSession()
             page = load(AccessibleOrganizationUnitsOptions(scope = scope, limit = limit, offset = newOffset))
             offset = newOffset
             error = null
@@ -107,7 +130,7 @@ internal class OrganizationUnitSwitcherController(
 
     /** Switches to [unit] and reloads the list, so the current unit moves. Returns what the switch ended with. */
     suspend fun switchTo(unit: AccessibleOrganizationUnit): OrganizationUnitSwitchResult? {
-        if (switchingId != null || unit.id == page.current) return null
+        if (switchingId != null || unit.id == current) return null
         switchingId = unit.id
         error = null
         return try {
@@ -133,7 +156,7 @@ internal class OrganizationUnitSwitcherController(
         onSwitch: (AccessibleOrganizationUnit) -> Unit,
     ) = OrganizationUnitSwitcherState(
         organizationUnits = page.organizationUnits,
-        current = page.current,
+        current = current,
         isLoading = isLoading,
         error = error,
         limit = limit,
@@ -142,7 +165,18 @@ internal class OrganizationUnitSwitcherController(
         onPageChange = onPageChange,
         switchingId = switchingId,
         onSwitch = onSwitch,
+        currentName = currentOrganizationUnitName(i18n, page.organizationUnits, current, sessionName),
     )
+
+    // The session's unit only names the field, so a failure to read it leaves the field to the page.
+    private suspend fun readSession(): CurrentOrganizationUnit? =
+        try {
+            session()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
 }
 
 /** A translated message for a failed load or switch; the server's own text is never shown. */
@@ -157,7 +191,7 @@ internal fun organizationUnitSwitcherError(
         else -> i18n.resolve(fallbackKey)
     }
 
-/** How a unit is named in the list: its name, else its handle, else a translated placeholder. */
+/** How a unit is named in the menu: its name, else its handle, else a translated placeholder. */
 internal fun organizationUnitLabel(
     i18n: ThunderIDI18n,
     unit: AccessibleOrganizationUnit,
@@ -166,10 +200,35 @@ internal fun organizationUnitLabel(
         ?: unit.handle?.takeIf { it.isNotBlank() }
         ?: i18n.resolve("organizationUnitSwitcher.unnamed")
 
+/** The current unit's name: from [organizationUnits] when they list it, else [fallback]. */
+internal fun currentOrganizationUnitName(
+    i18n: ThunderIDI18n,
+    organizationUnits: List<AccessibleOrganizationUnit>,
+    current: String?,
+    fallback: String?,
+): String? = organizationUnits.firstOrNull { it.id == current }?.let { organizationUnitLabel(i18n, it) } ?: fallback
+
 /**
- * Lists the organization units the signed-in user can access, marks the current one, and switches to the
- * one the user picks with [dev.thunderid.android.ThunderIDClient.switchOrganizationUnit] (Material 3).
- * [content] replaces the built-in UI and keeps the loading, paging and switching.
+ * What the switcher's field shows: the unit a switch is going to, else the current unit, else the loading
+ * text while the units load, else the placeholder.
+ */
+internal fun organizationUnitFieldText(
+    i18n: ThunderIDI18n,
+    state: OrganizationUnitSwitcherState,
+): String {
+    state.switchingId?.let { id ->
+        val target = state.organizationUnits.firstOrNull { it.id == id }?.let { organizationUnitLabel(i18n, it) } ?: id
+        return i18n.resolve("organizationUnitSwitcher.switching").replace("{name}", target)
+    }
+    state.currentName?.let { return it }
+    val key = if (state.isLoading) "organizationUnitSwitcher.loading" else "organizationUnitSwitcher.placeholder"
+    return i18n.resolve(key)
+}
+
+/**
+ * Shows the current organization unit in a field that opens a menu of the units the signed-in user can
+ * access, and switches to the one the user picks with [dev.thunderid.android.ThunderIDClient.switchOrganizationUnit]
+ * (Material 3). [content] replaces the built-in UI and keeps the loading, paging and switching.
  *
  * @param scope Narrows the list, such as to the current unit's siblings.
  * @param limit The page size.
@@ -206,13 +265,14 @@ fun OrganizationUnitSwitcher(
                         thunderState.client.switchOrganizationUnit(unit.id, switchOptions)
                     }
                 },
+                session = { thunderState.client.getCurrentOrganizationUnit() },
             )
         }
     LaunchedEffect(controller, thunderState.user?.sub) { controller.reload(0) }
 
     BaseOrganizationUnitSwitcher(
         organizationUnits = controller.page.organizationUnits,
-        current = controller.page.current,
+        current = controller.current,
         modifier = modifier,
         isLoading = controller.isLoading,
         error = controller.error,
@@ -239,13 +299,15 @@ fun OrganizationUnitSwitcher(
                 }
             }
         },
+        currentName = controller.sessionName,
         content = content,
     )
 }
 
 /**
- * Unstyled base variant: draws the [organizationUnits] it is given, with no SDK state, and calls [onSwitch]
- * for the unit the user picks. [content] replaces the built-in UI.
+ * Unstyled base variant: shows the [current] unit in a field whose menu lists the [organizationUnits] it is
+ * given, with no SDK state, and calls [onSwitch] for another unit the user picks. [currentName] names the
+ * current unit when the page does not list it. [content] replaces the built-in UI.
  */
 @Composable
 fun BaseOrganizationUnitSwitcher(
@@ -260,6 +322,7 @@ fun BaseOrganizationUnitSwitcher(
     totalResults: Int = organizationUnits.size,
     onPageChange: (Int) -> Unit = {},
     switchingId: String? = null,
+    currentName: String? = null,
     content: (@Composable (OrganizationUnitSwitcherState) -> Unit)? = null,
 ) {
     val i18n = LocalThunderID.current.i18n
@@ -275,99 +338,166 @@ fun BaseOrganizationUnitSwitcher(
             onPageChange = onPageChange,
             switchingId = switchingId,
             onSwitch = onSwitch,
+            currentName = currentOrganizationUnitName(i18n, organizationUnits, current, currentName),
         )
     Box(modifier = modifier) {
-        if (content != null) content(state) else OrganizationUnitList(state, i18n)
+        if (content != null) content(state) else OrganizationUnitDropdown(state, i18n)
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OrganizationUnitList(
+private fun OrganizationUnitDropdown(
     state: OrganizationUnitSwitcherState,
     i18n: ThunderIDI18n,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val isSwitching = state.switchingId != null
+    val open = expanded && !isSwitching
+    val fieldText = organizationUnitFieldText(i18n, state)
+    // An app hides the label by translating it to an empty string.
+    val label = i18n.resolve("organizationUnitSwitcher.label")
+    val labelSlot: (@Composable () -> Unit)? = if (label.isNotBlank()) ({ Text(label) }) else null
     Column(
         modifier = Modifier.fillMaxWidth().exposeTestTagsAsResourceIds(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(i18n.resolve("organizationUnitSwitcher.title"), style = MaterialTheme.typography.titleMedium)
-        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("thunderid-ou-error")) }
-        when {
-            state.isLoading && state.organizationUnits.isEmpty() -> {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Text(i18n.resolve("organizationUnitSwitcher.loading"))
+        ExposedDropdownMenuBox(
+            expanded = open,
+            onExpandedChange = { expanded = it && !isSwitching },
+        ) {
+            OutlinedTextField(
+                value = fieldText,
+                onValueChange = {},
+                readOnly = true,
+                enabled = !isSwitching,
+                singleLine = true,
+                label = labelSlot,
+                trailingIcon = {
+                    if (isSwitching) {
+                        // The field already reads "Switching to …", so the indicator adds no label of its own.
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = open)
+                    }
+                },
+                modifier = Modifier.menuAnchor().fillMaxWidth().testTag("thunderid-ou-field"),
+            )
+            ExposedDropdownMenu(expanded = open, onDismissRequest = { expanded = false }) {
+                when {
+                    state.isLoading -> {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text(i18n.resolve("organizationUnitSwitcher.loading"))
+                        }
+                    }
+
+                    state.organizationUnits.isEmpty() -> {
+                        Text(
+                            i18n.resolve("organizationUnitSwitcher.empty"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+
+                    else -> {
+                        state.organizationUnits.forEach { unit ->
+                            OrganizationUnitOption(unit, state, i18n) { expanded = false }
+                        }
+                    }
                 }
-            }
-
-            state.organizationUnits.isEmpty() -> {
-                Text(i18n.resolve("organizationUnitSwitcher.empty"))
-            }
-
-            else -> {
-                state.organizationUnits.forEach { unit -> OrganizationUnitRow(unit, state, i18n) }
+                if (state.totalResults > state.limit) OrganizationUnitPager(state, i18n)
             }
         }
-        if (state.totalResults > state.limit) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    onClick = { state.onPageChange(maxOf(0, state.offset - state.limit)) },
-                    enabled = state.offset > 0 && !state.isLoading,
-                ) { Text(i18n.resolve("organizationUnitSwitcher.previous")) }
-                val end = state.offset + state.organizationUnits.size
-                Text(
-                    i18n
-                        .resolve("organizationUnitSwitcher.page")
-                        .replace("{start}", (if (end == 0) 0 else state.offset + 1).toString())
-                        .replace("{end}", end.toString())
-                        .replace("{total}", state.totalResults.toString()),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                TextButton(
-                    onClick = { state.onPageChange(state.offset + state.limit) },
-                    enabled = end < state.totalResults && !state.isLoading,
-                ) { Text(i18n.resolve("organizationUnitSwitcher.next")) }
-            }
+        state.error?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("thunderid-ou-error"),
+            )
         }
     }
 }
 
 @Composable
-private fun OrganizationUnitRow(
+private fun OrganizationUnitOption(
     unit: AccessibleOrganizationUnit,
     state: OrganizationUnitSwitcherState,
     i18n: ThunderIDI18n,
+    close: () -> Unit,
 ) {
     val isCurrent = unit.id == state.current
-    Row(
-        modifier = Modifier.fillMaxWidth().testTag("thunderid-ou-${unit.id}"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(organizationUnitLabel(i18n, unit), style = MaterialTheme.typography.bodyLarge)
-            unit.handle?.takeIf { it.isNotBlank() && it != unit.name }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
-        }
+    val name = organizationUnitLabel(i18n, unit)
+    val check: (@Composable () -> Unit)? =
         if (isCurrent) {
-            Text(
-                i18n.resolve("organizationUnitSwitcher.current"),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
+            { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
         } else {
-            OutlinedButton(
-                onClick = { state.onSwitch(unit) },
-                enabled = state.switchingId == null,
-                modifier = Modifier.testTag("thunderid-ou-switch-${unit.id}"),
-            ) {
-                Text(
-                    i18n.resolve(
-                        if (state.switchingId == unit.id) "organizationUnitSwitcher.switching" else "organizationUnitSwitcher.switch",
-                    ),
-                )
-            }
+            null
         }
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(
+                    name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // The handle is the secondary text, unless it already names the unit.
+                unit.handle?.takeIf { it.isNotBlank() && it != name }?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        },
+        onClick = {
+            close()
+            // Picking the current unit only closes the menu.
+            if (!isCurrent) state.onSwitch(unit)
+        },
+        trailingIcon = check,
+        modifier = Modifier.testTag("thunderid-ou-${unit.id}").semantics { selected = isCurrent },
+    )
+}
+
+@Composable
+private fun OrganizationUnitPager(
+    state: OrganizationUnitSwitcherState,
+    i18n: ThunderIDI18n,
+) {
+    val end = state.offset + state.organizationUnits.size
+    Row(
+        modifier = Modifier.padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        TextButton(
+            onClick = { state.onPageChange(maxOf(0, state.offset - state.limit)) },
+            enabled = state.offset > 0 && !state.isLoading,
+            modifier = Modifier.testTag("thunderid-ou-previous"),
+        ) { Text(i18n.resolve("organizationUnitSwitcher.previous")) }
+        Text(
+            i18n
+                .resolve("organizationUnitSwitcher.page")
+                .replace("{start}", (if (end == 0) 0 else state.offset + 1).toString())
+                .replace("{end}", end.toString())
+                .replace("{total}", state.totalResults.toString()),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(
+            onClick = { state.onPageChange(state.offset + state.limit) },
+            enabled = end < state.totalResults && !state.isLoading,
+            modifier = Modifier.testTag("thunderid-ou-next"),
+        ) { Text(i18n.resolve("organizationUnitSwitcher.next")) }
     }
 }

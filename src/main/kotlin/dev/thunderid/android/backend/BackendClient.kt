@@ -193,6 +193,33 @@ internal class BackendClient(
         }
 
     /**
+     * Switches the session to organization unit [ouId] at the backend, with no browser. The unit goes in the
+     * query (`ouId`) and in a JSON body (`{"ouId": …}`), so the backend can read it from either. On success the
+     * cached session is dropped, so the next read returns the unit's; on a refusal the session stays as it was.
+     * `session_expired` refreshes the session once and retries. A `401` left after that means the backend has no
+     * session to switch, so it is reported as `login_required`, which signs out.
+     *
+     * @return `null` once switched, or the refusal.
+     */
+    suspend fun switchOrganizationUnit(ouId: String): BackendSwitchRefusal? {
+        if (handles.handle() == null) return BackendSwitchRefusal(LOGIN_REQUIRED)
+        val url = "${endpoints.ouSwitch}${if (endpoints.ouSwitch.contains('?')) "&" else "?"}ouId=${encode(ouId)}"
+        val body = Gson().toJson(mapOf("ouId" to ouId))
+        var response = call("POST", url, body)
+        if (response.statusCode == 401 && errorCode(response) == SESSION_EXPIRED) {
+            if (!refresh()) return BackendSwitchRefusal(LOGIN_REQUIRED)
+            response = call("POST", url, body)
+        }
+        if (response.statusCode in 200..299) {
+            session = null
+            return null
+        }
+        val error = if (response.statusCode == 401) LOGIN_REQUIRED else errorCode(response)
+        if (error == LOGIN_REQUIRED) markSignedOut()
+        return BackendSwitchRefusal(error)
+    }
+
+    /**
      * Ends the backend session. Local state is cleared whether or not the backend could be reached, and
      * a failure is still reported. Signing out here is not news to anyone, so [onSessionEnded] is not
      * called.

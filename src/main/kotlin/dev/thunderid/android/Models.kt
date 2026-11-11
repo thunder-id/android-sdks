@@ -187,6 +187,11 @@ data class EmbeddedFlowResponse(
     val sessionData: List<FlowSessionData>? = null,
     /** The flow identifiers of the SSO sessions the step ended. */
     val clearedSessions: List<String>? = null,
+    /**
+     * How many seconds the flow execution stays valid, from when this response was sent. Present while the flow is
+     * not complete. A request for the execution after that fails with [ThunderIDErrorCode.FLOW_EXPIRED].
+     */
+    val expiresIn: Long? = null,
 )
 
 /**

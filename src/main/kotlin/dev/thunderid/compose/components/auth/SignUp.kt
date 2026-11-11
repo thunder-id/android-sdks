@@ -16,8 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -31,6 +34,8 @@ import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.components.auth.buttons.BaseSignUpButton
 import dev.thunderid.compose.components.auth.flow.FlowErrorBanner
+import dev.thunderid.compose.components.auth.flow.FlowNoticeBanner
+import dev.thunderid.compose.components.auth.flow.rememberFlowExpiry
 import dev.thunderid.compose.components.exposeTestTagsAsResourceIds
 import dev.thunderid.compose.i18n.FlowTemplateResolver
 import kotlinx.coroutines.CancellationException
@@ -56,6 +61,9 @@ fun SignUp(
             modifier = Modifier.padding(16.dp).exposeTestTagsAsResourceIds(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (state.isFlowRestarted) {
+                FlowNoticeBanner(message = i18n.resolve("flow.expired.restarted"))
+            }
             // The form stays below the error so the user can correct their input and retry.
             state.error?.let { FlowErrorBanner(message = it) }
             if (state.components.isNotEmpty()) {
@@ -111,6 +119,12 @@ fun BaseSignUp(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val signUpState = remember { SignUpState() }
+    var restarts by remember { mutableIntStateOf(0) }
+    signUpState.flowExpiry =
+        rememberFlowExpiry {
+            signUpState.prepareRestart()
+            restarts++
+        }
 
     signUpState.onSubmit = onSubmit@{ actionId ->
         // Ignore taps while a step is in flight, so a double tap does not submit it twice.
@@ -132,6 +146,7 @@ fun BaseSignUp(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (signUpState.expireIfFlowExpired(e)) return@launch
                 signUpState.error = e.message
                 onError?.invoke(e.message ?: "Sign-up failed")
             } finally {
@@ -141,7 +156,7 @@ fun BaseSignUp(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(restarts) {
         signUpState.isLoading = true
         try {
             val response = thunderState.client.signUp()
@@ -185,6 +200,7 @@ internal suspend fun handleSignUpResponse(
     onComplete: (() -> Unit)?,
     onError: ((String) -> Unit)?,
 ) {
+    state.flowExpiry?.track(response)
     when (response.flowStatus) {
         FlowStatus.COMPLETE -> {
             state.clearFields()

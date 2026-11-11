@@ -44,7 +44,14 @@ internal class FlowExecutionClient(
         val body = submitBody(flowId, actionId, challengeToken).toMutableMap()
         body["verbose"] = true
         if (inputs.isNotEmpty()) body["inputs"] = inputs
-        return httpClient.post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false).withErrorAsFailureReason()
+        val response =
+            try {
+                httpClient.post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false)
+            } catch (e: IAMException) {
+                if (e.serverError?.code != EXECUTION_NOT_FOUND_CODE) throw e
+                throw IAMException(ThunderIDErrorCode.FLOW_EXPIRED, "The flow execution expired", e, e.serverError)
+            }
+        return response.withErrorAsFailureReason()
     }
 
     /**
@@ -153,6 +160,9 @@ internal class FlowExecutionClient(
 }
 
 private val REFUSAL_STATUSES = setOf(400, 403, 404, 409)
+
+/** The server's code for a step whose execution doesn't exist any more: it expired, or it already ended. */
+private const val EXECUTION_NOT_FOUND_CODE = "FES-1004"
 
 /** Surfaces the `error` object's text through `failureReason`, which the UI already shows. */
 internal fun EmbeddedFlowResponse.withErrorAsFailureReason(): EmbeddedFlowResponse =

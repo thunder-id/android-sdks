@@ -38,6 +38,7 @@ internal object PtPtStrings {
             "signUp.submit" to "Criar conta",
             "signUp.loading" to "A criar conta…",
             "signUp.federatedError" to "Não foi possível iniciar o registo federado",
+            "flow.expired.restarted" to "A sua sessão expirou, por isso começámos de novo.",
             "signOut.button" to "Terminar Sessão",
             "signOut.loading" to "A terminar sessão…",
             "callback.loading" to "A concluir o início de sessão…",

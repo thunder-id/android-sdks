@@ -38,6 +38,7 @@ internal object SiLkStrings {
             "signUp.submit" to "ගිණුමක් සාදන්න",
             "signUp.loading" to "ගිණුම සාදමින්…",
             "signUp.federatedError" to "ෆෙඩරේටඩ් ලියාපදිංචිය ආරම්භ කළ නොහැකි විය",
+            "flow.expired.restarted" to "ඔබගේ සැසිය කල් ඉකුත් වූ බැවින් අපි නැවත ආරම්භ කළෙමු.",
             "signOut.button" to "ඉවත් වෙන්න",
             "signOut.loading" to "ඉවත් වෙමින්…",
             "callback.loading" to "පුරනය සම්පූර්ණ කරමින්…",

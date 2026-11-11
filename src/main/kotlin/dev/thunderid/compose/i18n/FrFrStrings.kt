@@ -38,6 +38,7 @@ internal object FrFrStrings {
             "signUp.submit" to "Créer un compte",
             "signUp.loading" to "Création du compte…",
             "signUp.federatedError" to "Impossible de démarrer l'inscription fédérée",
+            "flow.expired.restarted" to "Votre session a expiré, nous avons donc recommencé.",
             "signOut.button" to "Se déconnecter",
             "signOut.loading" to "Déconnexion en cours…",
             "callback.loading" to "Finalisation de la connexion…",

@@ -464,7 +464,7 @@ class ManagementCoverageApiTest {
             val overlay =
                 client(
                     CoverageFetcher(
-                        resource = """{"isOwned":false,"visible":true,"policyIds":["p-1"],"rules":{"email":{"editable":true}}}""",
+                        resource = """{"isOwnedByOU":false,"visible":true,"policyIds":["p-1"],"rules":{"email":{"editable":true}}}""",
                     ),
                 ).applications.getOverlayRules("app-1", "ou-a")
 

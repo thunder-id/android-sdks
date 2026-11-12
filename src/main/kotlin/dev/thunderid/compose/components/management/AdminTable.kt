@@ -192,19 +192,21 @@ internal fun AdminSelect(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     emptyText: String? = null,
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = options.firstOrNull { it.value == value }
     val shown = selected?.label ?: (if (options.isEmpty()) emptyText else placeholder).orEmpty()
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = it && options.isNotEmpty() },
+        onExpandedChange = { expanded = it && enabled && options.isNotEmpty() },
         modifier = modifier,
     ) {
         OutlinedTextField(
             value = shown,
             onValueChange = {},
             readOnly = true,
+            enabled = enabled,
             singleLine = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },

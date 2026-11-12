@@ -272,7 +272,9 @@ class AttributeVerificationTest {
             val error = expectError(ThunderIDErrorCode.INVALID_INPUT) { client.verifyAttribute("email") }
 
             assertEquals("SYS-1000", error.serverError?.code)
-            assertEquals("$BASE_URL/oauth2/token", transport.requests.single().url)
+            // The refresh reads the discovery document first, for the token endpoint.
+            val requests = transport.requests.filterNot { it.url.endsWith("/.well-known/openid-configuration") }
+            assertEquals("$BASE_URL/oauth2/token", requests.single().url)
         }
 
     @Test

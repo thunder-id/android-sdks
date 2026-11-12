@@ -96,8 +96,8 @@ internal class HttpClient(
     }
 
     /**
-     * Sends an authenticated request to an absolute [url], which may live on a different host from
-     * `baseUrl`. When [fetcher] is set it replaces the built-in transport for this request; the access
+     * Sends a request to an absolute [url], which may live on a different host from `baseUrl`, with the
+     * access token unless [requiresAuth] is `false`. When [fetcher] is set it replaces the built-in transport for this request; the access
      * token is already attached to the request it receives.
      * [responseError] can replace the default error for a failed HTTP response.
      */
@@ -106,12 +106,13 @@ internal class HttpClient(
         url: String,
         jsonBody: String? = null,
         fetcher: ThunderIDFetcher? = null,
+        requiresAuth: Boolean = true,
         noinline responseError: ((ThunderIDHttpResponse) -> IAMException?)? = null,
     ): T {
         if (!url.startsWith("https://")) {
             throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "Request URL must use HTTPS")
         }
-        return parseResponse(execute(method, url, jsonBody, true, emptyMap(), fetcher, responseError))
+        return parseResponse(execute(method, url, jsonBody, requiresAuth, emptyMap(), fetcher, responseError))
     }
 
     /**

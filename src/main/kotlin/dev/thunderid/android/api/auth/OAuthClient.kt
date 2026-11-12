@@ -19,11 +19,16 @@ import java.net.URLEncoder
 
 /** The OpenID provider metadata fields the SDK reads. */
 internal data class ProviderMetadata(
+    @SerializedName("issuer") val issuer: String? = null,
+    @SerializedName("authorization_endpoint") val authorizationEndpoint: String? = null,
     @SerializedName("token_endpoint") val tokenEndpoint: String? = null,
     @SerializedName("backchannel_authentication_endpoint") val backchannelAuthenticationEndpoint: String? = null,
     @SerializedName("device_authorization_endpoint") val deviceAuthorizationEndpoint: String? = null,
     @SerializedName("pushed_authorization_request_endpoint") val pushedAuthorizationRequestEndpoint: String? = null,
     @SerializedName("require_pushed_authorization_requests") val requirePushedAuthorizationRequests: Boolean? = null,
+    @SerializedName("jwks_uri") val jwksUri: String? = null,
+    @SerializedName("userinfo_endpoint") val userinfoEndpoint: String? = null,
+    @SerializedName("revocation_endpoint") val revocationEndpoint: String? = null,
 )
 
 /**
@@ -35,17 +40,21 @@ internal data class ProviderMetadata(
 internal class OAuthClient(
     private val http: HttpClient,
     private val baseUrl: String,
+    // The discovery document's URL (`endpoints.wellKnown`), when the app names one.
+    private val wellKnown: String? = null,
 ) {
     private var metadata: ProviderMetadata? = null
 
-    /** The server's metadata, read once and kept. `null` when it cannot be read; it is tried again next time. */
+    /**
+     * The server's metadata, read once and kept from `endpoints.wellKnown`, else from
+     * `{baseUrl}/.well-known/openid-configuration`. `null` when it cannot be read; it is tried again next time.
+     */
     suspend fun metadata(): ProviderMetadata? {
         metadata?.let { return it }
+        val url = wellKnown ?: "$baseUrl$WELL_KNOWN_SUFFIX"
         val response =
             runCatching {
-                http.exchange(
-                    ThunderIDHttpRequest("GET", "$baseUrl/.well-known/openid-configuration", mapOf("Accept" to JSON), null),
-                )
+                http.exchange(ThunderIDHttpRequest("GET", url, mapOf("Accept" to JSON), null))
             }.getOrNull() ?: return null
         if (response.statusCode !in 200..299) return null
         return runCatching { Gson().fromJson(response.body, ProviderMetadata::class.java) }
@@ -53,11 +62,51 @@ internal class OAuthClient(
             ?.also { metadata = it }
     }
 
-    /** The token endpoint, or the one acting for organization unit [ouId]. */
-    fun tokenUrl(ouId: String?): String = if (ouId == null) "$baseUrl/oauth2/token" else "${ouBase(ouId)}/oauth2/token"
+    /**
+     * The token endpoint: the discovered `token_endpoint`, else `{baseUrl}/oauth2/token`. For organization unit
+     * [ouId] it is always the unit's own, `{baseUrl}/ou/{ouId}/oauth2/token`.
+     */
+    suspend fun tokenUrl(ouId: String?): String =
+        if (ouId == null) discovered(metadata()?.tokenEndpoint, "token") else "${ouBase(ouId)}/oauth2/token"
 
-    /** The authorization endpoint, or the one bounded to organization unit [ouId]. */
-    fun authorizeUrl(ouId: String?): String = if (ouId == null) "$baseUrl/oauth2/authorize" else "${ouBase(ouId)}/oauth2/authorize"
+    /**
+     * The authorization endpoint: the discovered `authorization_endpoint`, else `{baseUrl}/oauth2/authorize`. For
+     * organization unit [ouId] it is always the unit's own. It does not read the metadata, so that a URL can be
+     * built without suspending: it uses the metadata once something has read it, as `ThunderIDClient.signIn` does.
+     */
+    fun authorizeUrl(ouId: String?): String =
+        if (ouId == null) {
+            discovered(metadata?.authorizationEndpoint, "authorize")
+        } else {
+            "${ouBase(ouId)}/oauth2/authorize"
+        }
+
+    /** The JWKS URL the server's metadata names in `jwks_uri`, or `null` when it names none. */
+    suspend fun jwksUrl(): String? = metadata()?.jwksUri?.takeIf { it.isNotBlank() }
+
+    /** The UserInfo endpoint the server's metadata names in `userinfo_endpoint`, or `null` when it names none. */
+    suspend fun userinfoUrl(): String? = metadata()?.userinfoEndpoint?.takeIf { it.isNotBlank() }
+
+    /**
+     * The issuer an ID token's `iss` must equal (OpenID Connect Discovery 1.0 §4.3). The discovery base is
+     * `endpoints.wellKnown` without its `/.well-known/openid-configuration` suffix, else `baseUrl`. The issuer is
+     * the discovered `issuer` when it is the discovery base with or without one trailing slash, else the discovery
+     * base itself. When `endpoints.wellKnown` does not end with that suffix the app chose the document itself, so
+     * the issuer is the discovered `issuer`, and `null` when the document cannot be read or names none.
+     */
+    suspend fun expectedIssuer(): String? {
+        if (wellKnown != null && !wellKnown.endsWith(WELL_KNOWN_SUFFIX)) {
+            return metadata()?.issuer?.takeIf { it.isNotBlank() }
+        }
+        val base = wellKnown?.removeSuffix(WELL_KNOWN_SUFFIX) ?: baseUrl
+        val issuer = metadata()?.issuer ?: return base
+        return if (issuer.removeSuffix("/") == base.removeSuffix("/")) issuer else base
+    }
+
+    private fun discovered(
+        endpoint: String?,
+        path: String,
+    ): String = endpoint?.takeIf { it.isNotBlank() } ?: "$baseUrl/oauth2/$path"
 
     private fun ouBase(ouId: String): String = "$baseUrl/ou/${encodePathSegment(ouId)}"
 
@@ -84,9 +133,12 @@ internal class OAuthClient(
         return parseToken(response)
     }
 
-    /** Revokes a token (RFC 7009), form-encoded. The server answers 200 whether or not it knew the token. */
+    /**
+     * Revokes a token (RFC 7009) at the discovered `revocation_endpoint`, else `{baseUrl}/oauth2/revoke`,
+     * form-encoded. The server answers 200 whether or not it knew the token.
+     */
     suspend fun revoke(form: Map<String, String>) {
-        val response = postForm("$baseUrl/oauth2/revoke", form)
+        val response = postForm(discovered(metadata()?.revocationEndpoint, "revoke"), form)
         if (response.statusCode !in 200..299) throw failure(response, "The token revocation was refused")
     }
 
@@ -215,6 +267,7 @@ internal class OAuthClient(
 
     companion object {
         private const val JSON = "application/json"
+        private const val WELL_KNOWN_SUFFIX = "/.well-known/openid-configuration"
         private const val DEFAULT_INTERVAL = 5
         private const val DEFAULT_CIBA_EXPIRY = 120
         private const val DEFAULT_DEVICE_EXPIRY = 600
@@ -281,4 +334,14 @@ internal class OAuthClient(
 }
 
 /** Percent-encodes [value] as one URL path segment, so a `/` or a space in it cannot change the path. */
-internal fun encodePathSegment(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
+internal fun encodePathSegment(value: String): String = encodeUriComponent(value)
+
+/**
+ * Percent-encodes [value] for a URL path segment or query value (RFC 3986): a space becomes `%20` and a `+`
+ * becomes `%2B`, so neither reads back as the other.
+ */
+internal fun encodeUriComponent(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
+
+/** Builds a URL query from [params], in order, with every value percent-encoded by [encodeUriComponent]. */
+internal fun encodeQuery(params: List<Pair<String, String>>): String =
+    params.joinToString("&") { (name, value) -> "$name=${encodeUriComponent(value)}" }

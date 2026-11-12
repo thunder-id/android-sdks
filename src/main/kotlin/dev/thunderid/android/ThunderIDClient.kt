@@ -19,6 +19,7 @@ import dev.thunderid.android.api.auth.OrganizationUnitSwitchResult
 import dev.thunderid.android.api.auth.PKCEManager
 import dev.thunderid.android.api.auth.SupportedAuthorizationDetailsType
 import dev.thunderid.android.api.auth.SwitchOrganizationUnitOptions
+import dev.thunderid.android.api.auth.encodeQuery
 import dev.thunderid.android.api.auth.withErrorAsFailureReason
 import dev.thunderid.android.api.management.AdministrationClient
 import dev.thunderid.android.api.management.AgentTypesClient
@@ -131,10 +132,12 @@ class ThunderIDClient internal constructor(
         apiBaseUrl = apiBase
         val http = HttpClient(apiBase, config.allowInsecureConnections, defaultTransport = transport)
         val store = TokenStore(adapter)
-        val jwks = JWKSCache(http)
+        val oauth = OAuthClient(http, config.baseUrl, config.endpoints.wellKnown)
+        // The JWKS, the issuer and the OAuth endpoints come from the provider's discovery document, so `baseUrl`
+        // can be any OpenID provider's issuer. Without one they fall back to ThunderID's paths under `baseUrl`.
+        val jwks = JWKSCache(http) { oauth.jwksUrl() }
         tokenStore = store
-        tokenValidator = TokenValidator(jwks, config)
-        val oauth = OAuthClient(http, config.baseUrl)
+        tokenValidator = TokenValidator(jwks, config) { oauth.expectedIssuer() }
         oauthClient = oauth
         tokenRefresher = TokenRefresher(oauth, store)
         flowClient = FlowExecutionClient(http)
@@ -378,6 +381,10 @@ class ThunderIDClient internal constructor(
      * The URL that starts sign-in, for the app to open in a Custom Tab and hand the redirect back to
      * [handleRedirectCallback]. When sign-in runs on a backend it is the backend's sign-in endpoint,
      * bound to this client by a PKCE challenge, returning to `afterSignInUrl`.
+     *
+     * The URL goes to the provider's discovered `authorization_endpoint` once the SDK has read the discovery
+     * document, which [signIn] does first, and to `{baseUrl}/oauth2/authorize` before then. With an OpenID
+     * provider other than ThunderID, start sign-in with [signIn].
      */
     fun buildSignInUrl(options: SignInOptions? = null): String {
         val cfg = requireConfig()
@@ -403,21 +410,18 @@ class ThunderIDClient internal constructor(
         val (_, challenge) = pkceManager.generate()
         pendingOrganizationUnitId = unit
         val params =
-            StringBuilder(oauthClient!!.authorizeUrl(unit))
-                .append("?response_type=code")
-                .append("&client_id=")
-                .append(clientId)
-                .append("&redirect_uri=")
-                .append(cfg.afterSignInUrl ?: "")
-                .append("&scope=")
-                .append(cfg.scopes.joinToString(" "))
-                .append("&code_challenge=")
-                .append(challenge)
-                .append("&code_challenge_method=S256")
-        options?.prompt?.let { params.append("&prompt=").append(it) }
-        options?.loginHint?.let { params.append("&login_hint=").append(it) }
-        options?.fidp?.let { params.append("&fidp=").append(it) }
-        return params.toString()
+            listOfNotNull(
+                "response_type" to "code",
+                "client_id" to clientId,
+                "redirect_uri" to (cfg.afterSignInUrl ?: ""),
+                "scope" to cfg.scopes.joinToString(" "),
+                "code_challenge" to challenge,
+                "code_challenge_method" to "S256",
+                options?.prompt?.let { "prompt" to it },
+                options?.loginHint?.let { "login_hint" to it },
+                options?.fidp?.let { "fidp" to it },
+            )
+        return "${oauthClient!!.authorizeUrl(unit)}?${encodeQuery(params)}"
     }
 
     /**
@@ -452,7 +456,7 @@ class ThunderIDClient internal constructor(
             }
         val requestUri = oauth.pushAuthorizationRequest(form)
         pendingOrganizationUnitId = unit
-        return "${oauth.authorizeUrl(unit)}?" + OAuthClient.encodeForm(mapOf("client_id" to clientId, "request_uri" to requestUri))
+        return "${oauth.authorizeUrl(unit)}?" + encodeQuery(listOf("client_id" to clientId, "request_uri" to requestUri))
     }
 
     suspend fun handleRedirectCallback(url: String): User = completeRedirect(url, switching = false)
@@ -1031,7 +1035,10 @@ class ThunderIDClient internal constructor(
                 return user
             }
         }
-        val user = User(claimsFrom(httpClient!!.get("/oauth2/userinfo")))
+        val http = httpClient!!
+        val userinfo: com.google.gson.JsonObject =
+            oauthClient!!.userinfoUrl()?.let { http.send("GET", it) } ?: http.get("/oauth2/userinfo")
+        val user = User(claimsFrom(userinfo))
         currentUser = user
         return user
     }
@@ -1289,6 +1296,12 @@ class ThunderIDClient internal constructor(
     private fun validateConfig(config: ThunderIDConfig) {
         if (config.baseUrl.isEmpty()) throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl is required")
         if (!config.baseUrl.startsWith("https://")) throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl must use HTTPS")
+        config.endpoints.wellKnown?.let { wellKnown ->
+            val uri = runCatching { java.net.URI(wellKnown) }.getOrNull()
+            if (uri?.scheme != "https" || uri.host.isNullOrEmpty()) {
+                throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "endpoints.wellKnown must be an absolute HTTPS URL")
+            }
+        }
         if (config.attestationEnabled && config.attestationTokenProvider == null) {
             throw IAMException(
                 ThunderIDErrorCode.INVALID_CONFIGURATION,

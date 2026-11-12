@@ -19,10 +19,12 @@ internal data class JWKSResponse(
 )
 
 /**
- * Fetches and caches the server JWKS. Supports key rotation (spec §11.4).
+ * Fetches and caches the server JWKS. Supports key rotation (spec §11.4). The keys come from the URL [jwksUrl]
+ * gives, the discovered `jwks_uri`, or from `/oauth2/jwks` when it gives none.
  */
 internal class JWKSCache(
     private val httpClient: HttpClient,
+    private val jwksUrl: suspend () -> String? = { null },
 ) {
     private var cachedKeys: List<JWK> = emptyList()
     private var cacheExpiryMs: Long = 0L
@@ -32,7 +34,9 @@ internal class JWKSCache(
         if (!forceRefresh && System.currentTimeMillis() < cacheExpiryMs && cachedKeys.isNotEmpty()) {
             return cachedKeys
         }
-        val response: JWKSResponse = httpClient.get("/oauth2/jwks", requiresAuth = false)
+        val response: JWKSResponse =
+            jwksUrl()?.let { httpClient.send("GET", it, requiresAuth = false) }
+                ?: httpClient.get("/oauth2/jwks", requiresAuth = false)
         cachedKeys = response.keys
         cacheExpiryMs = System.currentTimeMillis() + minCacheTtlMs
         return cachedKeys

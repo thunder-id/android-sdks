@@ -7,7 +7,10 @@ package dev.thunderid.android
  * Configuration for the ThunderID Android SDK (spec §5.2).
  */
 data class ThunderIDConfig(
-    // Core
+    // Core - the ThunderID server's URL. With another OpenID Connect provider it is the provider's tenant root,
+    // with `endpoints.wellKnown` set to the provider's discovery URL; leave `wellKnown` out when the issuer is the
+    // root. Setting `baseUrl` to the issuer also works. The SDK reads the discovery document for the endpoints,
+    // the JWKS and the issuer.
     val baseUrl: String,
     val clientId: String? = null,
     // Redirect URIs

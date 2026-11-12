@@ -39,6 +39,36 @@ dependencies {
 > [!NOTE]
 > Replace `<latest-release-tag>` with the [latest release tag](https://github.com/thunder-id/android-sdks/releases) of the `android-sdks` repository.
 
+## Other OpenID Connect providers
+
+Redirect-based sign-in also works with any standards-compliant OpenID Connect provider. Set `baseUrl` to
+the provider's tenant root and `endpoints.wellKnown` to the provider's discovery URL. The SDK reads that
+document and takes the authorization, token, revocation, UserInfo and JWKS endpoints from it. Start sign-in
+with `signIn()`, which reads the document before it builds the URL.
+
+```kotlin
+ThunderIDConfig(
+    baseUrl = "https://idp.example.com/t/acme", // the provider's tenant root
+    clientId = "<client-id>",
+    afterSignInUrl = "com.example.app://callback",
+    endpoints =
+        ThunderIDEndpoints(
+            wellKnown = "https://idp.example.com/t/acme/oauth2/token/.well-known/openid-configuration",
+        ),
+)
+```
+
+The ID token's `iss` must be the issuer the discovery URL belongs to: the URL without its
+`/.well-known/openid-configuration` suffix, or the document's `issuer` when that is the same URL with a
+trailing slash. When `wellKnown` has no such suffix, `iss` must be the document's `issuer`.
+
+Leave `wellKnown` out when the provider's issuer is its root: the SDK then reads
+`{baseUrl}/.well-known/openid-configuration`. Setting `baseUrl` to the provider's issuer URL also works.
+
+When the document cannot be read, or leaves an endpoint out, the SDK uses the ThunderID path under
+`baseUrl`, such as `{baseUrl}/oauth2/token`. Organization unit sign-in and the app native flows are
+ThunderID features.
+
 ## Backend mode
 
 Set `endpoints.backend` to hand sign-in to a backend your application owns (the Backend for Frontend

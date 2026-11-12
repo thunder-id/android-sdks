@@ -14,11 +14,13 @@ import java.security.Signature
 import java.security.spec.RSAPublicKeySpec
 
 /**
- * Validates ID tokens per spec §11.4: signature (JWKS), iss, aud, exp, nonce.
+ * Validates ID tokens per spec §11.4: signature (JWKS), iss, aud, exp, nonce. `iss` must equal the issuer
+ * [expectedIssuer] gives, which defaults to `baseUrl`; when it gives none the token is refused.
  */
 internal class TokenValidator(
     private val jwksCache: JWKSCache,
     private val config: ThunderIDConfig,
+    private val expectedIssuer: suspend () -> String? = { config.baseUrl },
 ) {
     suspend fun validate(
         idToken: String,
@@ -33,7 +35,13 @@ internal class TokenValidator(
 
         if (config.tokenValidation.validateIssuer) {
             val iss = payload.optString("iss")
-            if (iss != config.baseUrl) {
+            val issuer =
+                expectedIssuer()
+                    ?: throw IAMException(
+                        ThunderIDErrorCode.AUTHENTICATION_FAILED,
+                        "ID token issuer unknown: the discovery document could not be read",
+                    )
+            if (iss != issuer) {
                 throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "ID token iss mismatch")
             }
         }

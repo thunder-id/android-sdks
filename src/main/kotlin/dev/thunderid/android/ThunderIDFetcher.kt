@@ -44,7 +44,8 @@ data class ThunderIDHttpConfig(
  * host from `baseUrl`. A `null` entry falls back to `{baseUrl}/{collection}`; in backend mode `{baseUrl}` here
  * is the API base, `endpoints.backend.apiBaseUrl` when set. A single resource is addressed
  * as `{collection}/{id}`, and its sub-resources as `{collection}/{id}/{sub-resource}`, for example
- * `{groups}/{id}/members` or `{roles}/{id}/assignments`.
+ * `{groups}/{id}/members` or `{roles}/{id}/assignments`. [wellKnown] is not a collection: it names the OpenID
+ * provider's discovery document.
  *
  * @property agentTypes Defaults to `{baseUrl}/agent-types`.
  * @property userTypes Defaults to `{baseUrl}/user-types`.
@@ -70,6 +71,12 @@ data class ThunderIDHttpConfig(
  * `{clientRegistrations}/{clientId}`.
  * @property projects Defaults to `{baseUrl}/projects`.
  * @property authorizationDetailTypes Defaults to `{baseUrl}/authorization-detail-types`.
+ * @property wellKnown The OpenID provider's discovery document URL. Defaults to
+ * `{baseUrl}/.well-known/openid-configuration`. Set it when `baseUrl` is a provider's tenant root and its issuer
+ * lives below it, for example `https://idp.example.com/t/acme/oauth2/token/.well-known/openid-configuration`
+ * with `baseUrl` `https://idp.example.com/t/acme`. Redirect sign-in takes its endpoints, JWKS and issuer from
+ * the document; ID tokens must carry the URL without its `/.well-known/openid-configuration` suffix as `iss`,
+ * or the document's `issuer` when the URL has no such suffix. Must use HTTPS.
  * @property backend The app backend's auth endpoints. Setting them hands sign-in to a backend the
  * application owns, which keeps the tokens. It names the application's own backend, not a ThunderID
  * endpoint. See [ThunderIDBackendEndpoints].
@@ -102,4 +109,5 @@ data class ThunderIDEndpoints(
     val clientRegistrations: String? = null,
     val projects: String? = null,
     val authorizationDetailTypes: String? = null,
+    val wellKnown: String? = null,
 )

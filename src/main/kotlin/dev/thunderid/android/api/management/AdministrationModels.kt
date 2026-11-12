@@ -3,6 +3,7 @@
 
 package dev.thunderid.android.api.management
 
+import com.google.gson.annotations.SerializedName
 import dev.thunderid.android.FlowError
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.ThunderIDErrorCode
@@ -87,7 +88,12 @@ data class AdministrationFlowConfig(
     val expirySeconds: Int? = null,
 )
 
-/** A flow definition as listed by the management API. */
+/**
+ * A flow definition as listed by the management API.
+ *
+ * @property isOwnedByOU In a list requested for an organization unit: whether the unit owns the flow. `false`
+ *   means the flow was shared with it.
+ */
 data class ManagedFlow(
     val id: String,
     val handle: String,
@@ -97,6 +103,7 @@ data class ManagedFlow(
     val isReadOnly: Boolean? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
+    val isOwnedByOU: Boolean? = null,
 )
 
 /**

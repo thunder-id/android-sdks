@@ -56,7 +56,12 @@ data class FlowListResponse(
  *
  * @property flowType `AUTHENTICATION` or `REGISTRATION` (administration flows report `ADMINISTRATION`).
  * @property nodes The flow graph: each node as the server describes it (`id`, `type`, `layout`, `meta`,
- *   `prompts`, `executor`, `onSuccess`, …), kept as JSON objects so no field is lost on a round trip.
+ *   `prompts`, `executor`, `onSuccess`, …), kept as JSON objects so no field is lost on a round trip. A flow
+ *   the unit owns declares its variables on its `VARIABLES` node.
+ * @property ouId The organization unit the flow was requested for.
+ * @property isOwnedByOU Whether the organization unit the flow was requested for owns it.
+ * @property variables Set on a flow shared with the requested organization unit, which comes back as its
+ *   variables only, without its graph. Read the variables of either kind with [getFlowVariableDefinitions].
  */
 data class FlowDefinition(
     val id: String,
@@ -68,6 +73,9 @@ data class FlowDefinition(
     val nodes: List<Map<String, Any?>>,
     val createdAt: String? = null,
     val updatedAt: String? = null,
+    val ouId: String? = null,
+    val isOwnedByOU: Boolean? = null,
+    val variables: List<FlowVariableDefinition>? = null,
 )
 
 /** The payload used to create or update a flow definition. A flow's [handle] cannot change once set. */
@@ -121,3 +129,17 @@ data class UpdateFlowVariablesRequest(
     val ouId: String,
     val values: Map<String, Any>,
 )
+
+/** Cache keys for flow lists. */
+object FlowQueryKeys {
+    const val FLOWS = "flows"
+}
+
+/**
+ * Cache keys for flow variables: what a flow declares for an organization unit, and the values the unit has
+ * set. Saving the values invalidates [VALUES].
+ */
+object FlowVariableQueryKeys {
+    const val DEFINITIONS = "flow-variable-definitions"
+    const val VALUES = "flow-variable-values"
+}

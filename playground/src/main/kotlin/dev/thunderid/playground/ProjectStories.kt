@@ -14,6 +14,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +31,9 @@ import dev.thunderid.android.FlowAction
 import dev.thunderid.android.FlowInput
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.FlowStepData
+import dev.thunderid.android.api.management.FlowVariableDefinition
+import dev.thunderid.android.api.management.FlowVariableType
+import dev.thunderid.android.api.management.ManagedFlow
 import dev.thunderid.android.api.management.OrganizationUnit
 import dev.thunderid.android.api.management.OrganizationUnitGroup
 import dev.thunderid.android.api.management.OrganizationUnitRole
@@ -48,6 +53,7 @@ import dev.thunderid.compose.components.auth.DeviceGrantResult
 import dev.thunderid.compose.components.auth.DeviceGrantState
 import dev.thunderid.compose.components.management.AdminListState
 import dev.thunderid.compose.components.management.AdminOption
+import dev.thunderid.compose.components.management.BaseFlowVariables
 import dev.thunderid.compose.components.management.BaseOrganizationUnitCreate
 import dev.thunderid.compose.components.management.BaseOrganizationUnitDetails
 import dev.thunderid.compose.components.management.BaseOrganizationUnitList
@@ -55,7 +61,10 @@ import dev.thunderid.compose.components.management.BaseProjectCreate
 import dev.thunderid.compose.components.management.BaseProjectDetails
 import dev.thunderid.compose.components.management.BaseProjectList
 import dev.thunderid.compose.components.management.BaseProjectSwitcher
+import dev.thunderid.compose.components.management.BaseSharedFlowList
 import dev.thunderid.compose.components.management.BaseSharingPolicies
+import dev.thunderid.compose.components.management.FlowVariablesForm
+import dev.thunderid.compose.components.management.FlowVariablesFormState
 import dev.thunderid.compose.components.management.OrganizationUnitCreate
 import dev.thunderid.compose.components.management.OrganizationUnitCreateFormState
 import dev.thunderid.compose.components.management.OrganizationUnitDetails
@@ -68,6 +77,8 @@ import dev.thunderid.compose.components.management.ProjectDetailsState
 import dev.thunderid.compose.components.management.ProjectList
 import dev.thunderid.compose.components.management.ProjectSwitcher
 import dev.thunderid.compose.components.management.ProjectSwitcherState
+import dev.thunderid.compose.components.management.SharedFlowList
+import dev.thunderid.compose.components.management.SharedFlowOwnership
 import dev.thunderid.compose.components.management.SharingPolicies
 import dev.thunderid.compose.components.management.SharingPoliciesState
 import dev.thunderid.compose.components.management.SharingPolicyDraft
@@ -127,10 +138,53 @@ private object ProjectSamples {
     val overlay =
         ResolvedOverlay(
             "ou-1",
-            isOwned = false,
+            isOwnedByOU = false,
             visible = true,
             rules =
                 mapOf("assignments" to OverlayRule(editable = true, value = listOf("viewer"))),
+        )
+    val flows =
+        listOf(
+            ManagedFlow("f-login", "basic-login", "AUTHENTICATION", name = "Basic login", isOwnedByOU = false),
+            ManagedFlow("f-signup", "self-signup", "REGISTRATION", name = "Self sign-up", isOwnedByOU = false),
+            ManagedFlow("f-unit", "unit-login", "AUTHENTICATION", name = "Unit login", isOwnedByOU = true),
+        )
+    val flowVariables =
+        listOf(
+            FlowVariableDefinition(
+                "supportEmail",
+                FlowVariableType.EMAIL_INPUT,
+                label = "Support email",
+                defaultValue = "help@acme.example",
+            ),
+            FlowVariableDefinition(
+                "otpLifetime",
+                FlowVariableType.NUMBER_INPUT,
+                label = "OTP lifetime (seconds)",
+                defaultValue = 120.0,
+                min = 30.0,
+                max = 600.0,
+            ),
+            FlowVariableDefinition("showSignUpLink", FlowVariableType.BOOLEAN_INPUT, label = "Show sign-up link", defaultValue = true),
+            FlowVariableDefinition(
+                "theme",
+                FlowVariableType.SELECT,
+                label = "Theme",
+                defaultValue = "light",
+                options = listOf("light", "dark"),
+            ),
+        )
+    val flowOverlay =
+        ResolvedOverlay(
+            "ou-1",
+            isOwnedByOU = false,
+            rules =
+                mapOf(
+                    "variables.supportEmail" to OverlayRule(editable = true),
+                    "variables.otpLifetime" to OverlayRule(editable = false, value = listOf("90")),
+                    "variables.showSignUpLink" to OverlayRule(editable = true),
+                    "variables.theme" to OverlayRule(editable = true),
+                ),
         )
     val codeStep =
         EmbeddedFlowResponse(
@@ -242,6 +296,32 @@ val ProjectSpecs: List<ComponentSpec> =
                     (it.text("ouId").ifBlank { null }?.let { ou -> "    ouId = ${quote(ou)},\n" } ?: "") + ")"
             },
             base = "BaseSharingPolicies(policies = policies, overlay = overlay, onCreate = {}, onUpdate = { _, _ -> }, onDelete = {})",
+        ),
+        spec(
+            "sharedFlowList",
+            "Admin",
+            "SharedFlowList",
+            controls = listOf(Control.Text("ouId"), Control.Choice("ownership", listOf("shared", "owned", "all"))),
+            defaults = mapOf("ouId" to "", "ownership" to "shared"),
+            live = {
+                "SharedFlowList(\n    ouId = ${quote(it.text("ouId").ifBlank { "<ouId>" })},\n" +
+                    "    ownership = SharedFlowOwnership.${it.text("ownership").uppercase()},\n" +
+                    "    onSelect = { flow -> /* open its variables */ },\n)"
+            },
+            base = "BaseSharedFlowList(flows = flows, onSelect = { flow -> })",
+        ),
+        spec(
+            "flowVariablesForm",
+            "Admin",
+            "FlowVariablesForm",
+            controls = listOf(Control.Text("flowId"), Control.Text("ouId"), Control.Bool("showScopeNotice")),
+            defaults = mapOf("flowId" to "", "ouId" to "", "showScopeNotice" to true),
+            live = {
+                "FlowVariablesForm(\n    flowId = ${quote(it.text("flowId").ifBlank { "<flowId>" })},\n" +
+                    "    ouId = ${quote(it.text("ouId").ifBlank { "<ouId>" })},\n" +
+                    "    showScopeNotice = ${it.flag("showScopeNotice")},\n    onSaved = { overrides -> },\n)"
+            },
+            base = "BaseFlowVariables(variables = variables, overlay = overlay, onSubmit = { values, overrides -> })",
         ),
         spec(
             "deviceGrant",
@@ -457,6 +537,67 @@ fun ProjectStoryPreview(
                 }
             }
 
+            "sharedFlowList" -> {
+                val content: (@Composable (AdminListState<ManagedFlow>) -> Unit)? = if (custom) ({ FlowRows(it) }) else null
+                val ownership = SharedFlowOwnership.values().first { it.name.lowercase() == props.text("ownership") }
+                if (live) {
+                    val ouId = props.text("ouId")
+                    if (ouId.isBlank()) {
+                        Note("Set ouId in Controls to the organization unit whose flows to list.")
+                    } else {
+                        SharedFlowList(
+                            ouId = ouId,
+                            modifier = modifier,
+                            ownership = ownership,
+                            limit = 5,
+                            onSelect = { tapped(it.id)() },
+                            content = content,
+                        )
+                    }
+                } else {
+                    val owned = ownership == SharedFlowOwnership.OWNED
+                    BaseSharedFlowList(
+                        flows = ProjectSamples.flows.filter { ownership == SharedFlowOwnership.ALL || it.isOwnedByOU == owned },
+                        modifier = modifier,
+                        onSelect = { tapped(it.id)() },
+                        content = content,
+                    )
+                }
+            }
+
+            "flowVariablesForm" -> {
+                val content: (@Composable (FlowVariablesFormState) -> Unit)? = if (custom) ({ VariableRows(it) }) else null
+                val notice = props.flag("showScopeNotice")
+                if (live) {
+                    val flowId = props.text("flowId")
+                    val ouId = props.text("ouId")
+                    if (flowId.isBlank() || ouId.isBlank()) {
+                        Note("Set flowId and ouId in Controls to a shared flow and the organization unit to configure it for.")
+                    } else {
+                        FlowVariablesForm(
+                            flowId = flowId,
+                            ouId = ouId,
+                            modifier = modifier,
+                            showScopeNotice = notice,
+                            onSaved = { tapped("saved ${it.keys}")() },
+                            content = content,
+                        )
+                    }
+                } else {
+                    BaseFlowVariables(
+                        variables = ProjectSamples.flowVariables,
+                        modifier = modifier,
+                        overlay = ProjectSamples.flowOverlay,
+                        ouName = "Engineering",
+                        ownerName = "Acme",
+                        showScopeNotice = notice,
+                        onSubmit = { _, overrides -> tapped("save ${overrides.keys}")() },
+                        onCancel = tapped("cancel"),
+                        content = content,
+                    )
+                }
+            }
+
             "deviceGrant" -> {
                 val content: (@Composable (DeviceGrantState) -> Unit)? = if (custom) ({ CodeEntry(it) }) else null
                 if (live) {
@@ -622,6 +763,51 @@ private fun PolicyRows(state: SharingPoliciesState) {
             Button(onClick = { create(SharingPolicyDraft(SharingScope.ALL_CHILDREN).toRequest()) }) { Text("Share with every child unit") }
         }
         state.overlay?.let { Text("Visible in ${it.ouId}: ${it.visible == true}", color = Pg.TextMuted) }
+    }
+}
+
+@Composable
+private fun FlowRows(state: AdminListState<ManagedFlow>) {
+    Column {
+        state.rows.forEach { flow ->
+            ListItem(
+                headlineContent = { Text(flow.name ?: flow.handle) },
+                supportingContent = { Text("${flow.flowType} · ${flow.handle}") },
+                modifier = Modifier.clickable(enabled = state.onSelect != null) { state.onSelect?.invoke(flow) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun VariableRows(state: FlowVariablesFormState) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        state.variables.forEach { definition ->
+            val label = definition.label ?: definition.identifier
+            val editable = state.getRule(definition).editable
+            val value = state.values[definition.identifier]
+            if (definition.type == FlowVariableType.BOOLEAN_INPUT) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = value == true,
+                        onCheckedChange = { state.onValueChange(definition.identifier, it) },
+                        enabled = editable,
+                    )
+                }
+            } else {
+                OutlinedTextField(
+                    value = value?.toString().orEmpty(),
+                    onValueChange = { state.onValueChange(definition.identifier, it) },
+                    label = { Text(label) },
+                    enabled = editable,
+                    isError = definition.identifier in state.errors,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            state.errors[definition.identifier]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+        Button(onClick = state.submit, enabled = !state.isSubmitting) { Text("Save overrides") }
     }
 }
 

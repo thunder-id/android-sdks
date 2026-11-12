@@ -438,7 +438,7 @@ internal fun overlayItems(
             AdminDetailItem(field, values.ifEmpty { "-" } + editable)
         }
     return listOf(
-        AdminDetailItem(i18n.resolve("admin.sharing.overlay.owned"), yesNo(overlay.isOwned)),
+        AdminDetailItem(i18n.resolve("admin.sharing.overlay.owned"), yesNo(overlay.isOwnedByOU)),
         AdminDetailItem(i18n.resolve("admin.sharing.overlay.visible"), yesNo(overlay.visible)),
     ) + rules
 }

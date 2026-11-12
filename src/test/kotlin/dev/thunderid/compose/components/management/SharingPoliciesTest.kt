@@ -110,7 +110,7 @@ class SharingPoliciesTest {
         val overlay =
             ResolvedOverlay(
                 ouId = "ou-1",
-                isOwned = false,
+                isOwnedByOU = false,
                 visible = true,
                 rules = mapOf("assignments" to OverlayRule(editable = true, value = listOf("viewer"))),
             )

@@ -102,12 +102,12 @@ data class SharingPolicyListResponse(
  * What one organization unit may do with a shared user, application, role or flow: whether it owns it, whether
  * it can see it, the policies that reached it, and the effective rule per field.
  *
- * @property isOwned Read from `isOwnedByOU`, or from `owned` as the flow API names it.
+ * @property isOwnedByOU Whether the organization unit owns the resource. The server names this `isOwnedByOU` for every
+ * resource, flows included.
  */
 data class ResolvedOverlay(
     val ouId: String? = null,
-    @SerializedName(value = "isOwnedByOU", alternate = ["owned", "isOwned"])
-    val isOwned: Boolean? = null,
+    val isOwnedByOU: Boolean? = null,
     val visible: Boolean? = null,
     val policyIds: List<String>? = null,
     val rules: Map<String, OverlayRule>? = null,

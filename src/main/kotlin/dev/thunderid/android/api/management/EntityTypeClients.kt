@@ -4,6 +4,8 @@
 package dev.thunderid.android.api.management
 
 import dev.thunderid.android.ThunderIDFetcher
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * User type management operations, reached through `ThunderIDClient.userTypes`, against the `userTypes`
@@ -25,6 +27,19 @@ class UserTypesClient internal constructor(
         id: String,
         fetcher: ThunderIDFetcher? = null,
     ): ManagedUserTypeDetails = transport.get(id, mapOf("include" to "display"), fetcher)
+
+    /** Resolves the type handle from a user record to its schema. */
+    internal suspend fun findByHandle(handle: String): ManagedUserTypeDetails? {
+        var offset = 0
+        do {
+            currentCoroutineContext().ensureActive()
+            val page = list(limit = 100, offset = offset)
+            val match = page.types.firstOrNull { it.handle == handle }
+            if (match != null) return get(match.id).takeIf { it.handle == handle }
+            offset += page.types.size
+        } while (page.types.isNotEmpty() && offset < page.totalResults)
+        return null
+    }
 
     /** Creates a user type and returns it as the server stored it. */
     suspend fun create(

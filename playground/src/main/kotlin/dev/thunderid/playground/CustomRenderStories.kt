@@ -35,6 +35,7 @@ import dev.thunderid.android.api.management.AccessStatusValue
 import dev.thunderid.android.api.management.AccountLifecycleAction
 import dev.thunderid.android.api.management.ManagedUser
 import dev.thunderid.android.api.management.RoleResourcePermissions
+import dev.thunderid.android.api.management.UserAttributeVerificationResult
 import dev.thunderid.android.api.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.account.BaseVerifyAttribute
@@ -127,10 +128,12 @@ val CustomRenderSpecs: List<ComponentSpec> =
             code = { story, props ->
                 val head =
                     if (story == "live") {
-                        "UserDetails(userId = ${quote(props.text("userId"))}, deletable = true, lifecycleActions = true)"
+                        "UserDetails(userId = ${quote(props.text("userId"))}, deletable = true, lifecycleActions = true, " +
+                            "attributeVerification = true)"
                     } else {
-                        "BaseUserDetails(user = user, groups = groups, onDelete = {}, lifecycleActions = actions, " +
-                            "onLifecycleAction = { action, note -> })"
+                        "BaseUserDetails(user = user, groups = groups, userSchema = userSchema, onDelete = {}, " +
+                            "lifecycleActions = actions, onLifecycleAction = { action, note -> }, " +
+                            "onSendVerification = { attribute -> })"
                     }
                 """
                 |$head { details ->
@@ -141,6 +144,14 @@ val CustomRenderSpecs: List<ComponentSpec> =
                 |        details.onLifecycleAction?.let { run ->
                 |            // Confirm a suspend or unsuspend yourself: a custom render replaces the built-in dialog.
                 |            details.lifecycleActions.forEach { action -> TextButton(onClick = { run(action, null) }) { Text(action.value) } }
+                |        }
+                |        details.sentVerification?.let { Text("Link sent to ${'$'}{it.maskedDestination ?: "the user"}") }
+                |        details.verifiableAttributes.forEach { name ->
+                |            val verified = details.verifiedAttributes?.get(name) != null
+                |            Text("${'$'}name: ${'$'}{if (verified) "verified" else "not verified"}")
+                |            details.onSendVerification?.takeIf { name in details.sendableAttributes }?.let { send ->
+                |                TextButton(onClick = { send(name) }, enabled = !details.isSendingVerification) { Text("Verify") }
+                |            }
                 |        }
                 |    }
                 |}
@@ -360,13 +371,20 @@ fun CustomRenderPreview(
             if (live && userId.isBlank()) {
                 Text("Set userId to an ID from your server.", color = MaterialTheme.colorScheme.onBackground)
             } else if (live) {
-                UserDetails(userId = userId, modifier = modifier, deletable = true, lifecycleActions = true, onDeleted = onTap) {
-                    UserCard(it)
-                }
+                UserDetails(
+                    userId = userId,
+                    modifier = modifier,
+                    deletable = true,
+                    lifecycleActions = true,
+                    attributeVerification = true,
+                    onDeleted = onTap,
+                ) { UserCard(it) }
             } else {
                 var status by remember { mutableStateOf(AccessStatusValue.LOCKED) }
+                var sent by remember { mutableStateOf<UserAttributeVerificationResult?>(null) }
                 BaseUserDetails(
-                    user = AdminSamples.users.first().copy(status = AccessStatus(status)),
+                    user = AdminSamples.verifiableUser(emailVerified = false).copy(status = AccessStatus(status)),
+                    userSchema = AdminSamples.userVerificationSchema,
                     modifier = modifier,
                     groups = AdminSamples.userGroups,
                     onDelete = onTap,
@@ -378,6 +396,11 @@ fun CustomRenderPreview(
                         },
                     onLifecycleAction = { action, _ ->
                         status = if (action == AccountLifecycleAction.UNLOCK) AccessStatusValue.ACTIVE else AccessStatusValue.SUSPENDED
+                        onTap()
+                    },
+                    sentVerification = sent,
+                    onSendVerification = {
+                        sent = AdminSamples.sentVerification
                         onTap()
                     },
                 ) { UserCard(it) }
@@ -470,6 +493,18 @@ private fun UserCard(details: UserDetailsState) {
             }
             val status = details.user?.status?.value
             status?.let { Text("Status: $it", fontSize = 14.sp) }
+            details.sentVerification?.let {
+                Text("Link sent to ${it.maskedDestination ?: "the user"}", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            }
+            details.verifiableAttributes.forEach { name ->
+                val verified = details.verifiedAttributes?.get(name) != null
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("$name: ${if (verified) "verified" else "not verified"}", fontSize = 13.sp)
+                    details.onSendVerification?.takeIf { name in details.sendableAttributes }?.let { send ->
+                        TextButton(onClick = { send(name) }, enabled = !details.isSendingVerification) { Text("Verify") }
+                    }
+                }
+            }
             details.onLifecycleAction?.let { run -> LifecycleRow(details.lifecycleActions, details.isRunningLifecycleAction, run) }
             details.onDelete?.let { delete ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

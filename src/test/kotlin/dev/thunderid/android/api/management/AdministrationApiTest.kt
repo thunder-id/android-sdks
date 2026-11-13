@@ -201,6 +201,34 @@ class AdministrationApiTest {
             assertEquals("email", type.systemAttributes?.display)
         }
 
+    @Test
+    fun `resolves the schema for a user type handle found on a later page`() =
+        runTest {
+            val responses =
+                mapOf(
+                    "$BASE_URL/user-types?limit=100&offset=0&include=display" to
+                        """{"totalResults":2,"count":1,"types":[{"id":"t-1","handle":"staff"}]}""",
+                    "$BASE_URL/user-types?limit=100&offset=1&include=display" to
+                        """{"totalResults":2,"count":1,"types":[{"id":"t-2","handle":"customer"}]}""",
+                    "$BASE_URL/user-types/t-2?include=display" to
+                        """{"id":"t-2","handle":"customer","schema":{"workEmail":{"type":"email"}}}""",
+                )
+            val fetcher = ThunderIDFetcher { request -> ThunderIDHttpResponse(200, responses.getValue(request.url)) }
+
+            val schema = client(fetcher).userTypes.findByHandle("customer")?.schema
+
+            assertEquals(mapOf("workEmail" to PropertyDefinition("email")), schema)
+        }
+
+    @Test
+    fun `returns no schema when the type handle is absent`() =
+        runTest {
+            val fetcher = ServerFetcher(resource = """{"totalResults":1,"count":1,"types":[{"id":"t-1","handle":"staff"}]}""")
+
+            assertNull(client(fetcher).userTypes.findByHandle("customer"))
+            assertEquals(listOf("GET $BASE_URL/user-types?limit=100&offset=0&include=display"), fetcher.calls())
+        }
+
     // MARK: - Administration flows
 
     @Test

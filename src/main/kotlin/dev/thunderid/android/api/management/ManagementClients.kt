@@ -450,6 +450,50 @@ class UsersClient internal constructor(
             operatorNote,
             fetcher,
         )
+
+    /**
+     * Sends the user a link to verify one of their attributes, such as `email`, through the server's
+     * administrator-initiated verification flow. The flow pauses once the link is sent; the user finishes it
+     * from the link, without the administrator. Sent to `{baseUrl}/flow/execute` with the administrator's token.
+     *
+     * @param handle The flow to run. When omitted, it is the handle the server configures under
+     *   [AdministrationFlowConfigKey.ADMIN_ATTRIBUTE_VERIFICATION].
+     *
+     * @return The channel and the masked destination the link was sent to.
+     * @throws IAMException [ThunderIDErrorCode.INVALID_INPUT] before any request when [id] or [attribute] is
+     *   blank; the usual API errors when the server refuses the request.
+     * @throws AdministrationFlowError with `sendUserAttributeVerification-NotConfiguredError-001` when [handle] is
+     *   omitted and the server configures no handle, before any flow runs; when a step refuses, with the step's code (such as `FET-1114` for a
+     *   suspended user), or with `sendUserAttributeVerification-UnexpectedStateError-001` when the flow reports
+     *   no sent link.
+     */
+    suspend fun sendAttributeVerification(
+        id: String,
+        attribute: String,
+        handle: String? = null,
+        fetcher: ThunderIDFetcher? = null,
+    ): UserAttributeVerificationResult {
+        if (id.isBlank() || attribute.isBlank()) {
+            throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "A user identifier and an attribute are required.")
+        }
+        val flowHandle =
+            handle?.takeIf { it.isNotBlank() }
+                ?: administration
+                    .resolveFlowHandles(listOf(AdministrationFlowConfigKey.ADMIN_ATTRIBUTE_VERIFICATION), fetcher)[
+                    AdministrationFlowConfigKey.ADMIN_ATTRIBUTE_VERIFICATION,
+                ]
+                ?: throw AdministrationFlowError(
+                    "$SEND_ATTRIBUTE_VERIFICATION_OPERATION-NotConfiguredError-001",
+                    "No attribute verification flow is configured on the server. The operation runs only through " +
+                        "its administration flow, so it was not performed.",
+                )
+        val request = adminInitiatedVerificationRequest(flowHandle, id, attribute)
+        val result: AdministrationFlowExecutionResponse? =
+            transport
+                .server("flow/execute", "send a verification link")
+                .create<AdministrationFlowExecutionResponse>(request, fetcher)
+        return result.toSentVerification()
+    }
 }
 
 /**

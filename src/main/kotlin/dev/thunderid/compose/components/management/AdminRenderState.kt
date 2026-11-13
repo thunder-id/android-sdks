@@ -3,6 +3,7 @@
 
 package dev.thunderid.compose.components.management
 
+import dev.thunderid.android.VerifiedAttribute
 import dev.thunderid.android.api.management.AccountLifecycleAction
 import dev.thunderid.android.api.management.Agent
 import dev.thunderid.android.api.management.Group
@@ -16,6 +17,7 @@ import dev.thunderid.android.api.management.RoleAssigneeType
 import dev.thunderid.android.api.management.RoleAssignment
 import dev.thunderid.android.api.management.RoleAssignmentInput
 import dev.thunderid.android.api.management.RoleResourcePermissions
+import dev.thunderid.android.api.management.UserAttributeVerificationResult
 
 /** A search an admin list applies on the server: the attribute to match and the value it must equal. */
 data class AdminSearch(
@@ -119,6 +121,13 @@ data class AgentCreateFormState(
  * @property lifecycleActions The account lifecycle actions offered for the user. Empty when none is allowed.
  * @property onLifecycleAction Runs an account lifecycle action, with the operator's note on a suspension. `null`
  *   when none is allowed. Ask for confirmation before suspending or unsuspending.
+ * @property verifiableAttributes The visible contact attributes whose verification status is known.
+ * @property verifiedAttributes The user's verified attributes, keyed by attribute. `null` when the server does not
+ *   report them.
+ * @property onSendVerification Sends the user a link to verify the given attribute. `null` when sending is not
+ *   allowed, including for read-only users.
+ * @property sentVerification What the last sent verification link reported, such as its masked destination.
+ * @property sendableAttributes The unverified email fields that support sending a link when the action is available.
  */
 data class UserDetailsState(
     val user: ManagedUser?,
@@ -134,6 +143,12 @@ data class UserDetailsState(
     val lifecycleActions: List<AccountLifecycleAction> = emptyList(),
     val isRunningLifecycleAction: Boolean = false,
     val onLifecycleAction: AccountLifecycleHandler? = null,
+    val verifiableAttributes: List<String> = emptyList(),
+    val verifiedAttributes: Map<String, VerifiedAttribute>? = null,
+    val onSendVerification: ((String) -> Unit)? = null,
+    val isSendingVerification: Boolean = false,
+    val sentVerification: UserAttributeVerificationResult? = null,
+    val sendableAttributes: List<String> = emptyList(),
 )
 
 /**

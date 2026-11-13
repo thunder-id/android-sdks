@@ -169,6 +169,12 @@ enum class FlowType(
 
     /** An operation the signed-in user runs on their own account, such as verifying an attribute. */
     SELF("SELF"),
+
+    /**
+     * An operation an administrator starts for a user, such as sending them an email verification link. The
+     * administrator's token starts it; the user continues it from the link, with no token.
+     */
+    ADMIN_INITIATED("ADMIN_INITIATED"),
 }
 
 data class EmbeddedFlowResponse(

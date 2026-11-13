@@ -4,8 +4,9 @@
 package dev.thunderid.android
 
 /**
- * Wire names and eligibility rules for self user attribute verification, which
- * [ThunderIDClient.verifyAttribute] runs as a `SELF` flow.
+ * Wire names and eligibility rules for user attribute verification: by the user, which
+ * [ThunderIDClient.verifyAttribute] runs as a `SELF` flow, or by an administrator, which
+ * `UsersClient.sendAttributeVerification` runs as an `ADMIN_INITIATED` flow.
  */
 object AttributeVerification {
     /** Handle of the self attribute verification flow the server ships, used unless the app names another. */

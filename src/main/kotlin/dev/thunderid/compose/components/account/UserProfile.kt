@@ -3,7 +3,6 @@
 
 package dev.thunderid.compose.components.account
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +28,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -671,17 +669,14 @@ private fun ProfileFieldEditDialog(
                         if (offersVerify) {
                             // Leaves the editor unchanged and opens the stored value's verification in its place.
                             // Outlined, so Save stays the one filled action on the page.
-                            OutlinedButton(
+                            VerificationActionButton(
+                                label = i18n.resolve("userProfile.verification.verify"),
                                 onClick = {
                                     state.cancel(field.name)
                                     state.verify(field.name)
                                 },
-                                shape = RoundedCornerShape(20.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
-                                contentPadding = PaddingValues(vertical = 13.dp),
-                                modifier = Modifier.fillMaxWidth().testTag("thunderid-verify-${field.name}"),
-                            ) { Text(i18n.resolve("userProfile.verification.verify")) }
+                                modifier = Modifier.testTag("thunderid-verify-${field.name}"),
+                            )
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = { state.cancel(field.name) }) {

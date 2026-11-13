@@ -32,6 +32,7 @@ enum class AdministrationMode(
  * key is the opt-out: the operation calls the management API directly.
  */
 object AdministrationFlowConfigKey {
+    const val ADMIN_ATTRIBUTE_VERIFICATION = "adminAttributeVerificationFlow"
     const val ACTION_DELETION = "actionDeletionFlow"
     const val AGENT_SUSPEND = "agentSuspendFlow"
     const val AGENT_UNLOCK = "agentUnlockFlow"
@@ -114,7 +115,8 @@ data class ManagedFlow(
  *   `executeAdministrationFlow-IncompleteError-001`, `executeAdministrationFlow-FlowError-001`,
  *   `resolveAdministrationFlowId-NotFoundError-001`, `regenerateClientSecret-FlowError-001` and
  *   `{operation}-NotConfiguredError-001` (`suspendUser`, `unsuspendUser`, `unlockUser`, `suspendAgent`,
- *   `unsuspendAgent`, `unlockAgent`, `suspendApplication`, `unsuspendApplication`).
+ *   `unsuspendAgent`, `unlockAgent`, `suspendApplication`, `unsuspendApplication`), and
+ *   `sendUserAttributeVerification-NotConfiguredError-001`, `sendUserAttributeVerification-UnexpectedStateError-001` and `sendUserAttributeVerification-FlowError-001`.
  * @property flowError The error of the step that refused, when one did.
  */
 class AdministrationFlowError(

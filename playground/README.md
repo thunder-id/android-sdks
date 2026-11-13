@@ -39,6 +39,9 @@ next time you run it. It is a development tool, not a sample: for a minimal inte
   **Base**, **Live** and **Custom rendering** stories. The project picked in the live `ProjectSwitcher` story
   scopes the live `ApplicationList` and `AgentList` stories, and the live `ApplicationCreate` and `AgentCreate`
   stories create in it when no `ouId` is set.
+  `UserDetails` also has **Email unverified**, **Verification link sent**, and **Email verified** stories with a
+  verified mobile number and an unverified work email. The Live story reads contact types from the user's schema
+  and, with `attributeVerification` on, sends links to eligible email fields.
 - **Session**: the signed-in user, an access token countdown, refresh and sign-out, the stored
   tokens (reveal and copy), the decoded access token claims, and session events. **Access** lists the
   granted permissions from `rememberGrantedPermissions()`, which admin components each one unlocks

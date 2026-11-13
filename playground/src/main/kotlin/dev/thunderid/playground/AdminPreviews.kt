@@ -531,6 +531,7 @@ fun AdminStoryPreview(
                 val editable = props.flag("editable")
                 val deletable = props.flag("deletable")
                 val lifecycleActions = props.flag("lifecycleActions")
+                val attributeVerification = props.flag("attributeVerification")
                 if (live) {
                     IdRequired(props.resourceId("userId", ManagementFixtures.userId), "user") { id ->
                         UserDetails(
@@ -539,6 +540,7 @@ fun AdminStoryPreview(
                             deletable = deletable,
                             editable = editable,
                             lifecycleActions = lifecycleActions,
+                            attributeVerification = attributeVerification,
                             administrationMode = props.administrationMode(),
                             onDeleted = {
                                 EventLog.ok("admin:user:deleted", id, source = "explorer")
@@ -548,15 +550,26 @@ fun AdminStoryPreview(
                     }
                 } else {
                     val lifecycle = rememberSampleLifecycle(AccountLifecycleSubjectKind.USER, props)
-                    val user = AdminSamples.users.first()
+                    val user = AdminSamples.verifiableUser(emailVerified = props.flag("emailVerified"))
                     BaseUserDetails(
                         user = user.copy(status = AccessStatus(lifecycle.status)),
+                        userSchema = AdminSamples.userVerificationSchema,
                         modifier = modifier,
                         groups = AdminSamples.userGroups,
                         error = error,
                         isLoading = loading,
                         lifecycleActions = lifecycle.actions,
                         onLifecycleAction = lifecycle.handler(lifecycleActions, user.id, onTap),
+                        sentVerification = if (props.flag("linkSent")) AdminSamples.sentVerification else null,
+                        onSendVerification =
+                            if (attributeVerification) {
+                                { attribute ->
+                                    EventLog.info("admin:userDetails:sendVerification", "${user.id} $attribute", source = "explorer")
+                                    onTap()
+                                }
+                            } else {
+                                null
+                            },
                         onDelete =
                             if (deletable) {
                                 {

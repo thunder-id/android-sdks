@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.thunderid.android.R
 import dev.thunderid.compose.LocalThunderID
@@ -158,6 +159,7 @@ internal fun AdminPanel(
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -183,7 +185,10 @@ internal data class AdminDetailItem(
 )
 
 @Composable
-internal fun AdminDetailList(items: List<AdminDetailItem>) {
+internal fun AdminDetailList(
+    items: List<AdminDetailItem>,
+    valueAlignment: TextAlign = TextAlign.Start,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { item ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -195,10 +200,20 @@ internal fun AdminDetailList(items: List<AdminDetailItem>) {
                 )
                 if (item.copyable) {
                     SelectionContainer(modifier = Modifier.weight(0.6f)) {
-                        Text(item.value, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            item.value,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = valueAlignment,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 } else {
-                    Text(item.value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.6f))
+                    Text(
+                        item.value,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = valueAlignment,
+                        modifier = Modifier.weight(0.6f),
+                    )
                 }
             }
         }

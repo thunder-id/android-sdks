@@ -585,6 +585,7 @@ class AdministrationApiTest {
                     resource =
                         """{"id":"a-1","clientId":"client","display":"Bot","attributes":{"name":"Bot"},""" +
                             """"ouHandle":"default","ouId":"ou-1","type":"bot",""" +
+                            """"owner":{"id":"jane@example.com","idType":"email","isLocal":false},""" +
                             """"inboundAuthConfig":[{"type":"oauth2","config":{"grantTypes":["client_credentials"]}}]}""",
                 )
 
@@ -595,6 +596,7 @@ class AdministrationApiTest {
             assertEquals(
                 json(
                     """{"ouId":"ou-1","type":"bot","attributes":{"name":"Bot"},"delegated":false,""" +
+                        """"owner":{"id":"jane@example.com","idType":"email","isLocal":false},""" +
                         """"inboundAuthConfig":[{"type":"oauth2",""" +
                         """"config":{"grantTypes":["client_credentials"],"clientSecret":"${result.clientSecret}"}}]}""",
                 ),

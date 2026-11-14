@@ -83,7 +83,10 @@ fun BaseAgentDetails(
     val details =
         listOfNotNull(
             AdminDetailItem(i18n.resolve("admin.agents.details.type"), agent.type),
-            AdminDetailItem(i18n.resolve("admin.agents.details.owner"), agent.owner ?: i18n.resolve("admin.agents.details.no_owner")),
+            AdminDetailItem(
+                i18n.resolve("admin.agents.details.owner"),
+                agent.owner?.id ?: i18n.resolve("admin.agents.details.no_owner"),
+            ),
             AdminDetailItem(i18n.resolve("admin.common.columns.organization_unit"), agent.ouHandle ?: agent.ouId),
             agent.clientId?.let { AdminDetailItem(i18n.resolve("admin.agents.list.columns.client_id"), it, copyable = true) },
             accessStatusLabel(i18n, agent.status?.value)?.let { AdminDetailItem(i18n.resolve("admin.common.columns.status"), it) },

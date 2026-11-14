@@ -12,6 +12,7 @@ import dev.thunderid.android.ThunderIDFetcher
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.ThunderIDHttpResponse
 import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.AgentOwner
 import dev.thunderid.android.api.management.Application
 import dev.thunderid.android.api.management.BasicAgent
 import dev.thunderid.android.api.management.BasicApplication
@@ -238,7 +239,7 @@ object AdminSamples {
             type = "assistant",
             display = "Billing assistant",
             description = "Answers billing questions",
-            owner = "usr-1",
+            owner = AgentOwner(id = "usr-1"),
             clientId = "billing-assistant",
         )
 

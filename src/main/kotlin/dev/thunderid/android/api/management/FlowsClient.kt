@@ -22,19 +22,31 @@ class FlowsClient internal constructor(
      * Returns a page of flow definitions.
      *
      * @param flowType Only flows of this type, such as `AUTHENTICATION` or `REGISTRATION`.
+     * @param ouId Lists the flows this organization unit owns, followed by the ones shared with it, instead of
+     *   every flow the caller can see. Each one's [ManagedFlow.isOwnedByOU] then says which it is.
      */
     suspend fun list(
         flowType: String? = null,
         limit: Int? = null,
         offset: Int? = null,
         fetcher: ThunderIDFetcher? = null,
-    ): FlowListResponse = transport.list(mapOf("flowType" to flowType) + page(limit, offset), fetcher)
+        ouId: String? = null,
+    ): FlowListResponse {
+        val filter = ouId?.let { ManagementFilter.equality("ouId", it) }
+        return transport.list(mapOf("filter" to filter, "flowType" to flowType) + page(limit, offset), fetcher)
+    }
 
-    /** Returns a single flow definition with its graph. */
+    /**
+     * Returns a single flow definition with its graph.
+     *
+     * @param ouId Returns the flow as this organization unit sees it. A flow shared with the unit comes back
+     *   with its [FlowDefinition.variables] only. Leave it out for the whole definition.
+     */
     suspend fun get(
         id: String,
         fetcher: ThunderIDFetcher? = null,
-    ): FlowDefinition = transport.get(id, fetcher = fetcher)
+        ouId: String? = null,
+    ): FlowDefinition = transport.get(id, mapOf("ouId" to ouId), fetcher)
 
     /** Creates a flow definition and returns it as the server stored it. */
     suspend fun create(

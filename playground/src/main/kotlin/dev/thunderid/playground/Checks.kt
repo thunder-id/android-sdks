@@ -36,6 +36,7 @@ import dev.thunderid.android.api.management.GroupMemberType
 import dev.thunderid.android.api.management.NotificationChannel
 import dev.thunderid.android.api.management.RoleAssigneeType
 import dev.thunderid.android.api.management.accountLifecycleActions
+import dev.thunderid.android.api.management.getFlowVariableDefinitions
 import dev.thunderid.android.api.management.getTokenPermissions
 import dev.thunderid.android.api.management.hasPermission
 import dev.thunderid.compose.ThunderIDState
@@ -138,7 +139,8 @@ val CheckDefs =
             "sharing",
             "Management",
             "Role and flow sharing, groups by path",
-            "client.roles · flows: listSharingPolicies() · getOverlayRules() · flows.getVariables() · groups.listByPath()",
+            "client.roles · flows: listSharingPolicies() · getOverlayRules() · flows.list(ouId) · flows.get(ouId) · " +
+                "flows.getVariables() · groups.listByPath()",
         ),
         CheckDef(
             "projects",
@@ -872,12 +874,21 @@ class ChecksController(
         val variables =
             if (flow != null && unit != null) runCatching { client.flows.getVariables(flow.id, unit.id) }.getOrNull() else null
         val groups = unit?.let { client.groups.listByPath(it.handle, limit = 5) }
+        val unitFlows = unit?.let { client.flows.list(limit = 5, ouId = it.id) }
+        val declared =
+            if (flow != null && unit != null) {
+                runCatching { getFlowVariableDefinitions(client.flows.get(flow.id, ouId = unit.id)) }.getOrNull()
+            } else {
+                null
+            }
         return pass(
             listOfNotNull(
                 role?.let { "role ${it.name}: ${rolePolicies?.totalResults ?: 0} sharing policies" },
-                unit?.let { "owned by ${it.handle}: ${overlay?.isOwned?.toString() ?: "not reached"}" },
+                unit?.let { "owned by ${it.handle}: ${overlay?.isOwnedByOU?.toString() ?: "not reached"}" },
                 flow?.let { "flow ${it.id}: ${flowPolicies?.totalResults ?: 0} sharing policies" },
                 variables?.let { "${it.values.size} variable overrides" },
+                declared?.let { "${it.size} variables declared for the unit" },
+                unitFlows?.let { page -> "${page.flows.count { it.isOwnedByOU == false }} flows shared with the unit" },
                 unit?.let { "groups/tree/${it.handle}: ${groups?.totalResults ?: 0} groups" },
             ).joinToString("; ").ifEmpty { "No roles, flows or organization units to read" },
         )

@@ -24,7 +24,10 @@ class ConnectionsClient internal constructor(
      *
      * Without [type] it returns a page of every connection (`GET /connections`), optionally narrowed to a
      * [category]. With [type] it returns every connection of that vendor (`GET /connections/{type}`), which
-     * the server does not page or filter, so [category], [limit] and [offset] are not sent.
+     * the server does not page or filter, so [category], [limit], [offset] and [ouId] are not sent.
+     *
+     * @param ouId Lists the connections this organization unit owns, followed by the ones shared into it,
+     *   instead of every connection the caller can see.
      */
     suspend fun list(
         type: ConnectionType? = null,
@@ -32,9 +35,11 @@ class ConnectionsClient internal constructor(
         limit: Int? = null,
         offset: Int? = null,
         fetcher: ThunderIDFetcher? = null,
+        ouId: String? = null,
     ): ConnectionListResponse {
         if (type == null) {
-            return transport.list(mapOf("category" to category?.value) + page(limit, offset), fetcher)
+            val filter = ouId?.let { ManagementFilter.equality("ouId", it) }
+            return transport.list(mapOf("category" to category?.value, "filter" to filter) + page(limit, offset), fetcher)
         }
         val items: Array<ConnectionInstance>? = transport.request("GET", listOf(type.value), fetcher = fetcher)
         val connections = items.orEmpty().map { it.copy(type = type, categories = it.categories.orEmpty()) }

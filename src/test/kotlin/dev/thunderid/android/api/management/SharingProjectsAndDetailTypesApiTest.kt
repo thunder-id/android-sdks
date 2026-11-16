@@ -159,7 +159,7 @@ class SharingProjectsAndDetailTypesApiTest {
                 ).roles
                     .getOverlayRules("r-1", "ou-a")
             val flow =
-                client(AnsweringFetcher("""{"ouId":"ou-b","owned":true,"visible":true,"policyIds":[],"rules":{}}"""))
+                client(AnsweringFetcher("""{"ouId":"ou-b","isOwnedByOU":true,"visible":true,"policyIds":[],"rules":{}}"""))
                     .flows
                     .getOverlayRules("f-1", "ou-b")
             val policy =
@@ -169,9 +169,9 @@ class SharingProjectsAndDetailTypesApiTest {
                     ),
                 ).flows.getSharingPolicy("f-1", "p-1")
 
-            assertEquals(false, role.isOwned)
+            assertEquals(false, role.isOwnedByOU)
             assertEquals(false, role.rules?.get("assignments")?.editable)
-            assertEquals(true, flow.isOwned)
+            assertEquals(true, flow.isOwnedByOU)
             assertEquals(
                 true,
                 policy.childUnits

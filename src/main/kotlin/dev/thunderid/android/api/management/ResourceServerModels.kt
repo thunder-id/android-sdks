@@ -58,6 +58,7 @@ data class ResourceServer(
     val ouId: String,
     val type: ResourceServerType? = null,
     val delimiter: String? = null,
+    val hierarchicalPermissions: Boolean? = null,
     val description: String? = null,
     val authorizationEngine: AuthorizationEngineConfig? = null,
     val isReadOnly: Boolean? = null,
@@ -71,6 +72,7 @@ data class CreateResourceServerRequest(
     val description: String? = null,
     val type: ResourceServerType? = null,
     val delimiter: String? = null,
+    val hierarchicalPermissions: Boolean? = null,
 )
 
 /** The payload used to update a resource server. */

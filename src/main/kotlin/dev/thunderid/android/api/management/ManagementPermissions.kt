@@ -37,17 +37,31 @@ fun getTokenPermissions(accessToken: String?): List<String> {
     }.getOrDefault(emptyList())
 }
 
+/** How a resource server matches permissions: its `delimiter` and `hierarchicalPermissions`. */
+data class PermissionMatching(
+    val delimiter: String = ":",
+    val hierarchical: Boolean = true,
+)
+
 /**
  * Tests [granted] against a [required] permission with the server's hierarchy: a permission covers itself
  * and everything beneath it, so `system` satisfies `system:user:view`, while `system:user` does not satisfy
- * `system:group:view`. An empty [required] permission is always satisfied.
+ * `system:group:view`. An empty [required] permission is always satisfied. [matching] follows another
+ * resource server's rules.
  *
  * The result only decides what to show. The server still decides every request.
  */
 fun hasPermission(
     granted: Collection<String>,
     required: String,
-): Boolean = required.isEmpty() || granted.any { it == required || required.startsWith("$it:") }
+    matching: PermissionMatching = PermissionMatching(),
+): Boolean {
+    val delimiter = if (matching.hierarchical) matching.delimiter else ""
+    return required.isEmpty() ||
+        granted.any {
+            it == required || (delimiter.isNotEmpty() && it.isNotEmpty() && required.startsWith("$it$delimiter"))
+        }
+}
 
 /**
  * The name to show for a managed user: its resolved `display` value, then its `name`, `given_name` and

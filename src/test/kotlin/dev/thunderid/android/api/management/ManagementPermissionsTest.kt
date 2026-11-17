@@ -3,6 +3,7 @@
 
 package dev.thunderid.android.api.management
 
+import com.google.gson.Gson
 import dev.thunderid.android.InMemoryStorageAdapter
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDConfig
@@ -63,6 +64,34 @@ class ManagementPermissionsTest {
         assertFalse(hasPermission(listOf("sys"), "system:user"))
         assertFalse(hasPermission(emptyList(), "system"))
         assertTrue(hasPermission(emptyList(), ""))
+    }
+
+    @Test
+    fun `matching follows the resource server`() {
+        val exact = PermissionMatching(hierarchical = false)
+        assertFalse(hasPermission(listOf("orders"), "orders:create", exact))
+        assertTrue(hasPermission(listOf("orders:create"), "orders:create", exact))
+
+        val dotted = PermissionMatching(delimiter = ".")
+        assertTrue(hasPermission(listOf("orders"), "orders.create", dotted))
+        assertFalse(hasPermission(listOf("orders"), "orders:create", dotted))
+
+        assertFalse(hasPermission(listOf("orders"), "orderscreate", PermissionMatching(delimiter = "")))
+        assertFalse(hasPermission(listOf(""), ":orders"))
+    }
+
+    @Test
+    fun `resource server carries hierarchical permissions`() {
+        val gson = Gson()
+        val server =
+            gson.fromJson(
+                """{"id":"rs-1","name":"Orders","identifier":"orders","ouId":"o","hierarchicalPermissions":true}""",
+                ResourceServer::class.java,
+            )
+        assertEquals(true, server.hierarchicalPermissions)
+
+        val body = gson.toJson(CreateResourceServerRequest("Orders", "orders", "o", hierarchicalPermissions = true))
+        assertTrue(body.contains("\"hierarchicalPermissions\":true"))
     }
 
     @Test

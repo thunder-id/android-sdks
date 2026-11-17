@@ -75,11 +75,13 @@ internal object TeInStrings {
             "changeCredential.heading" to "{credential} మార్చండి",
             "changeCredential.description" to
                 "బలమైన {credentialLower}ను ఎంచుకోండి మరియు దానిని ఇతర ఖాతాలకు మళ్లీ ఉపయోగించవద్దు.",
+            "changeCredential.current.label" to "ప్రస్తుత {credential}",
             "changeCredential.new.label" to "కొత్త {credential}",
             "changeCredential.confirm.label" to "కొత్త {credential} నిర్ధారించండి",
             "changeCredential.submit" to "{credential} మార్చండి",
             "changeCredential.success" to "మీ {credentialLower} నవీకరించబడింది.",
             "changeCredential.mismatch.error" to "{credentialLower} సరిపోలలేదు.",
+            "changeCredential.current.error" to "మీ ప్రస్తుత {credentialLower} తప్పు.",
             "changeCredential.new.invalid.error" to "ఇది అవసరమైన ఫార్మాట్‌కు సరిపోలడం లేదు.",
             "changeCredential.requirements.pattern" to "అవసరమైన ఫార్మాట్‌కు సరిపోలాలి.",
             "changeCredential.generic.error" to

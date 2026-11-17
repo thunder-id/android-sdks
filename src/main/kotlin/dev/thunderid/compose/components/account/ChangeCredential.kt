@@ -61,6 +61,7 @@ import kotlinx.coroutines.launch
 
 /** The form field a credential-update failure belongs to. */
 enum class CredentialField {
+    CURRENT,
     NEW,
     FORM,
 }
@@ -68,10 +69,8 @@ enum class CredentialField {
 /**
  * The derived state a change-credential form needs to render and to gate submission.
  *
- * Mirrors the JavaScript SDK's `evaluateChangePasswordForm`: there is deliberately no
- * current-value field to evaluate. The self-service credential write endpoint does not verify
- * the account's existing value today, so collecting one would only teach the user a false sense
- * of security.
+ * Mirrors the JavaScript SDK's `evaluateChangePasswordForm`. The current value isn't evaluated:
+ * only the server knows whether the user already holds a value to prove.
  */
 data class CredentialFormEvaluation(
     val confirmMatches: Boolean,
@@ -111,10 +110,24 @@ internal fun evaluateCredentialForm(
     )
 }
 
-/** Maps a failure from the credential write path onto the field that caused it. `400` is the new value failing a server-side check. */
-internal fun mapCredentialError(code: ThunderIDErrorCode): CredentialField =
-    when (code) {
-        ThunderIDErrorCode.INVALID_INPUT -> CredentialField.NEW
+/** The server's code for a current value that is missing or doesn't match. */
+private const val INVALID_CURRENT_CREDENTIAL_CODE = "USR-1047"
+
+/** The server's code for a credential the user doesn't hold yet, refused because they hold another. */
+private const val CREDENTIAL_SET_NOT_ALLOWED_CODE = "USR-1048"
+
+/**
+ * Maps a failure from the credential write path onto the field that caused it. A `403` for a
+ * missing or wrong current value belongs to the current value. A `400` is the new value failing a
+ * server-side check, unless the server refused to set a credential the user doesn't hold yet.
+ */
+internal fun mapCredentialError(
+    code: ThunderIDErrorCode,
+    serverCode: String? = null,
+): CredentialField =
+    when {
+        code == ThunderIDErrorCode.FORBIDDEN && serverCode == INVALID_CURRENT_CREDENTIAL_CODE -> CredentialField.CURRENT
+        code == ThunderIDErrorCode.INVALID_INPUT && serverCode != CREDENTIAL_SET_NOT_ALLOWED_CODE -> CredentialField.NEW
         else -> CredentialField.FORM
     }
 
@@ -144,6 +157,7 @@ class ChangeCredentialState(
 ) {
     var credentialDisplayName by mutableStateOf(credentialDisplayName)
         internal set
+    var currentValue by mutableStateOf("")
     var newValue by mutableStateOf("")
     var confirmValue by mutableStateOf("")
 
@@ -199,8 +213,10 @@ fun BaseChangeCredential(
             try {
                 thunderState.client.updateUserCredentials(
                     attribute = attribute,
+                    currentValue = state.currentValue,
                     newValue = state.newValue,
                 )
+                state.currentValue = ""
                 state.newValue = ""
                 state.confirmValue = ""
                 state.success = true
@@ -241,7 +257,11 @@ private fun applyCredentialError(
     i18n: ThunderIDI18n,
 ) {
     fun translate(key: String): String = translateCredential(i18n, state.credentialDisplayName, key)
-    when (mapCredentialError(error.code)) {
+    when (mapCredentialError(error.code, error.serverError?.code)) {
+        CredentialField.CURRENT -> {
+            state.fieldErrors[CredentialField.CURRENT] = translate("changeCredential.current.error")
+        }
+
         CredentialField.NEW -> {
             state.fieldErrors[CredentialField.NEW] = translate("changeCredential.generic.error")
         }
@@ -316,6 +336,7 @@ fun ChangeCredential(
                 state = state,
                 i18n = i18n,
                 onDismiss = {
+                    state.currentValue = ""
                     state.newValue = ""
                     state.confirmValue = ""
                     expanded = false
@@ -400,6 +421,19 @@ private fun ChangeCredentialDialog(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CredentialSecureField(
+                                    label = translate("changeCredential.current.label"),
+                                    value = state.currentValue,
+                                    onValueChange = { state.currentValue = it },
+                                    isError = state.fieldError(CredentialField.CURRENT) != null,
+                                    testTag = "thunderid-field-currentCredential",
+                                )
+                                state.fieldError(CredentialField.CURRENT)?.let {
+                                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
 
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 CredentialSecureField(

@@ -1,0 +1,32 @@
+appId: dev.thunderid.Quickstart
+---
+# Signs in with E2E_USERNAME/E2E_PASSWORD via the server-driven credentials step and waits for the
+# authenticated "Session active" state. The caller defines both env vars.
+
+- tapOn: "Sign in"
+
+# The credentials step is rendered from the flow definition the server returns, not from static
+# native views. The SDK tags each input with the field's identifier and each button with the
+# action's ref, so these ids track the server's flow response.
+#
+# Compose keeps testTag inside its own semantics tree, so these ids are only visible to Maestro
+# because the SDK opts the subtree in via testTagsAsResourceId.
+- extendedWaitUntil:
+    visible:
+      id: "thunderid-field-username"
+    timeout: 25000
+
+- tapOn:
+    id: "thunderid-field-username"
+- inputText: ${E2E_USERNAME}
+
+- tapOn:
+    id: "thunderid-field-password"
+- inputText: ${E2E_PASSWORD}
+
+- tapOn:
+    id: "thunderid-action-action_001"
+
+- extendedWaitUntil:
+    visible: "Session active"
+    timeout: 30000

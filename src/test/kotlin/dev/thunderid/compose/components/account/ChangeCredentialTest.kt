@@ -63,6 +63,21 @@ class ChangeCredentialTest {
     }
 
     @Test
+    fun `mapCredentialError routes an invalid current value to the current field`() {
+        assertEquals(CredentialField.CURRENT, mapCredentialError(ThunderIDErrorCode.FORBIDDEN, "USR-1047"))
+    }
+
+    @Test
+    fun `mapCredentialError routes a refused first credential to form level`() {
+        assertEquals(CredentialField.FORM, mapCredentialError(ThunderIDErrorCode.INVALID_INPUT, "USR-1048"))
+    }
+
+    @Test
+    fun `mapCredentialError routes another forbidden to form level`() {
+        assertEquals(CredentialField.FORM, mapCredentialError(ThunderIDErrorCode.FORBIDDEN))
+    }
+
+    @Test
     fun `mapCredentialError routes other failures to form level`() {
         assertEquals(CredentialField.FORM, mapCredentialError(ThunderIDErrorCode.SERVER_ERROR))
     }

@@ -75,11 +75,13 @@ internal object HiInStrings {
             "changeCredential.heading" to "{credential} बदलें",
             "changeCredential.description" to
                 "एक मज़बूत {credentialLower} चुनें और इसे अन्य खातों के लिए दोबारा उपयोग न करें।",
+            "changeCredential.current.label" to "वर्तमान {credential}",
             "changeCredential.new.label" to "नया {credential}",
             "changeCredential.confirm.label" to "नए {credential} की पुष्टि करें",
             "changeCredential.submit" to "{credential} बदलें",
             "changeCredential.success" to "आपका {credentialLower} अपडेट कर दिया गया है।",
             "changeCredential.mismatch.error" to "{credential} मेल नहीं खाते।",
+            "changeCredential.current.error" to "आपका वर्तमान {credentialLower} गलत है।",
             "changeCredential.new.invalid.error" to "यह आवश्यक प्रारूप से मेल नहीं खाता।",
             "changeCredential.requirements.pattern" to "आवश्यक प्रारूप से मेल खाना चाहिए।",
             "changeCredential.generic.error" to

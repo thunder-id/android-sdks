@@ -75,11 +75,13 @@ internal object PtBrStrings {
             "changeCredential.heading" to "Alterar {credential}",
             "changeCredential.description" to
                 "Escolha um(a) {credentialLower} forte e não o(a) reutilize em outras contas.",
+            "changeCredential.current.label" to "{credential} atual",
             "changeCredential.new.label" to "Novo {credential}",
             "changeCredential.confirm.label" to "Confirmar novo {credential}",
             "changeCredential.submit" to "Alterar {credential}",
             "changeCredential.success" to "Seu {credentialLower} foi atualizado.",
             "changeCredential.mismatch.error" to "Os {credentialLower}s não coincidem.",
+            "changeCredential.current.error" to "Seu {credentialLower} atual está incorreto.",
             "changeCredential.new.invalid.error" to "Isto não atende ao formato exigido.",
             "changeCredential.requirements.pattern" to "Deve corresponder ao formato exigido.",
             "changeCredential.generic.error" to "Ocorreu um erro ao atualizar seu {credentialLower}. Tente novamente.",

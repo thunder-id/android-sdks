@@ -75,11 +75,13 @@ internal object SiLkStrings {
             "changeCredential.heading" to "{credential} වෙනස් කරන්න",
             "changeCredential.description" to
                 "ශක්තිමත් {credentialLower} එකක් තෝරා එය වෙනත් ගිණුම් සඳහා නැවත භාවිත නොකරන්න.",
+            "changeCredential.current.label" to "වත්මන් {credential}",
             "changeCredential.new.label" to "නව {credential}",
             "changeCredential.confirm.label" to "නව {credential} තහවුරු කරන්න",
             "changeCredential.submit" to "{credential} වෙනස් කරන්න",
             "changeCredential.success" to "ඔබේ {credentialLower} යාවත්කාලීන කර ඇත.",
             "changeCredential.mismatch.error" to "{credentialLower} නොගැලපේ.",
+            "changeCredential.current.error" to "ඔබේ වත්මන් {credentialLower} වැරදියි.",
             "changeCredential.new.invalid.error" to "මෙය අවශ්‍ය ආකෘතියට නොගැලපේ.",
             "changeCredential.requirements.pattern" to "අවශ්‍ය ආකෘතියට ගැලපිය යුතුය.",
             "changeCredential.generic.error" to

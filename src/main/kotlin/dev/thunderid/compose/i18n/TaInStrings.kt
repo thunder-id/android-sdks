@@ -77,11 +77,13 @@ internal object TaInStrings {
             "changeCredential.heading" to "{credential} மாற்றவும்",
             "changeCredential.description" to
                 "வலுவான {credentialLower} ஐத் தேர்ந்தெடுத்து, அதை மற்ற கணக்குகளுக்கு மீண்டும் பயன்படுத்த வேண்டாம்.",
+            "changeCredential.current.label" to "தற்போதைய {credential}",
             "changeCredential.new.label" to "புதிய {credential}",
             "changeCredential.confirm.label" to "புதிய {credential}-ஐ உறுதிப்படுத்தவும்",
             "changeCredential.submit" to "{credential} மாற்றவும்",
             "changeCredential.success" to "உங்கள் {credentialLower} புதுப்பிக்கப்பட்டது.",
             "changeCredential.mismatch.error" to "{credentialLower} பொருந்தவில்லை.",
+            "changeCredential.current.error" to "உங்கள் தற்போதைய {credentialLower} தவறானது.",
             "changeCredential.new.invalid.error" to "இது தேவையான வடிவத்தைப் பூர்த்தி செய்யவில்லை.",
             "changeCredential.requirements.pattern" to "தேவையான வடிவத்துடன் பொருந்த வேண்டும்.",
             "changeCredential.generic.error" to

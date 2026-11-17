@@ -11,6 +11,7 @@ import dev.thunderid.android.ThunderIDEndpoints
 import dev.thunderid.android.ThunderIDFetcher
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.ThunderIDHttpResponse
+import dev.thunderid.android.VerifiedAttribute
 import dev.thunderid.android.api.management.Agent
 import dev.thunderid.android.api.management.Application
 import dev.thunderid.android.api.management.BasicAgent
@@ -22,11 +23,13 @@ import dev.thunderid.android.api.management.InboundAuthConfig
 import dev.thunderid.android.api.management.ManagedUser
 import dev.thunderid.android.api.management.MembershipGroup
 import dev.thunderid.android.api.management.OAuth2Config
+import dev.thunderid.android.api.management.PropertyDefinition
 import dev.thunderid.android.api.management.Role
 import dev.thunderid.android.api.management.RoleAssigneeType
 import dev.thunderid.android.api.management.RoleAssignment
 import dev.thunderid.android.api.management.RoleResourcePermissions
 import dev.thunderid.android.api.management.RoleSummary
+import dev.thunderid.android.api.management.UserAttributeVerificationResult
 import dev.thunderid.compose.components.management.AdminOption
 import dev.thunderid.compose.components.management.IdentityCandidate
 import dev.thunderid.compose.components.management.PermissionCandidate
@@ -211,6 +214,28 @@ object AdminSamples {
                 attributes = mapOf("given_name" to "Ada", "family_name" to "Park", "email" to "ada@example.com", "username" to "ada"),
             ),
         )
+
+    val userVerificationSchema =
+        mapOf(
+            "email" to PropertyDefinition(type = "email"),
+            "mobile_number" to PropertyDefinition(type = "mobile"),
+            "workEmail" to PropertyDefinition(type = "email"),
+        )
+
+    /** The sample user has a verified mobile and a work email ready for verification. */
+    fun verifiableUser(emailVerified: Boolean): ManagedUser =
+        users.first().copy(
+            attributes = users.first().attributes.orEmpty() + mapOf("mobile_number" to "+94770000021", "workEmail" to "liam@work.example"),
+            verifiedAttributes =
+                buildMap {
+                    val record = VerifiedAttribute("2026-11-03T10:00:00Z")
+                    put("mobile_number", record)
+                    if (emailVerified) put("email", record)
+                },
+        )
+
+    /** What a sent sample verification link reports. */
+    val sentVerification = UserAttributeVerificationResult(channel = "email", emailSent = true, maskedDestination = "l•••@example.com")
 
     val userGroups =
         listOf(

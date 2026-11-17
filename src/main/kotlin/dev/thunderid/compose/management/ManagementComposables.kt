@@ -32,6 +32,7 @@ import dev.thunderid.android.api.management.MembershipGroupListResponse
 import dev.thunderid.android.api.management.RoleQueryKeys
 import dev.thunderid.android.api.management.UpdateAgentRequest
 import dev.thunderid.android.api.management.UpdateManagedUserRequest
+import dev.thunderid.android.api.management.UserAttributeVerificationResult
 import dev.thunderid.android.api.management.UserQueryKeys
 import dev.thunderid.compose.LocalThunderID
 import kotlinx.coroutines.launch
@@ -201,6 +202,20 @@ fun rememberDeleteUser(
 ): ResourceMutationState<String, Unit> =
     rememberResourceMutation({ listOf(listOf(UserQueryKeys.USERS)) }) { client, id ->
         client.users.delete(id, fetcher, administrationMode)
+    }
+
+/**
+ * Remembers a mutation that sends a user a link to verify an attribute, through the administrator-initiated
+ * verification flow, then refetches the user. A null [handle] resolves the one the server configures when the
+ * mutation runs. Its input is the user's ID and the attribute.
+ */
+@Composable
+fun rememberSendUserAttributeVerification(
+    handle: String? = null,
+    fetcher: ThunderIDFetcher? = null,
+): ResourceMutationState<Pair<String, String>, UserAttributeVerificationResult> =
+    rememberResourceMutation({ (id, _) -> listOf(listOf(UserQueryKeys.USER, id)) }) { client, (id, attribute) ->
+        client.users.sendAttributeVerification(id, attribute, handle, fetcher)
     }
 
 // MARK: - Agents

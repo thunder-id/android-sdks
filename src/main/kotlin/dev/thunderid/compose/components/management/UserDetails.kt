@@ -5,14 +5,18 @@ package dev.thunderid.compose.components.management
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -20,20 +24,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.thunderid.android.api.management.AccountLifecycleAction
 import dev.thunderid.android.api.management.AccountLifecycleSubjectKind
+import dev.thunderid.android.api.management.AdministrationFlowConfigKey
 import dev.thunderid.android.api.management.AdministrationMode
 import dev.thunderid.android.api.management.ManagedUser
 import dev.thunderid.android.api.management.MembershipGroup
+import dev.thunderid.android.api.management.PropertyDefinition
 import dev.thunderid.android.api.management.UpdateManagedUserRequest
+import dev.thunderid.android.api.management.UserAttributeVerificationResult
 import dev.thunderid.android.api.management.UserQueryKeys
 import dev.thunderid.android.api.management.resolveManagedIdentityName
 import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.management.ADMINISTRATION_FLOWS_QUERY_KEY
 import dev.thunderid.compose.management.rememberAccountLifecycle
 import dev.thunderid.compose.management.rememberDeleteUser
 import dev.thunderid.compose.management.rememberGetUser
 import dev.thunderid.compose.management.rememberGetUserGroups
+import dev.thunderid.compose.management.rememberResourceQuery
+import dev.thunderid.compose.management.rememberSendUserAttributeVerification
 import dev.thunderid.compose.management.rememberUpdateUser
 import kotlinx.coroutines.launch
 
@@ -41,7 +52,9 @@ import kotlinx.coroutines.launch
  * Presents one user: its attributes and the groups it belongs to. Holds no data of its own.
  *
  * Delete and edit are shown only when [onDelete] and [onUpdate] are set, and never for a read-only user.
- * Delete asks for confirmation first. The user's access status is shown as a translated label.
+ * Delete asks for confirmation first. The user's access status is shown as a translated label. When the server
+ * reports verified attributes, stored email and mobile fields show their verification status. With [onSendVerification],
+ * an unverified email of a writable user offers a verification link.
  *
  * @param error A translated message to show.
  * @param hiddenAttributes Attributes never shown or edited.
@@ -50,9 +63,13 @@ import kotlinx.coroutines.launch
  *   [onLifecycleAction]. They change only runtime state, so they apply to read-only users too.
  * @param onLifecycleAction Runs an account lifecycle action. Suspending and unsuspending ask for confirmation
  *   first, and a suspension takes an optional operator note.
+ * @param sentVerification What the last sent verification link reported. Its masked destination is shown in a
+ *   success message.
+ * @param onSendVerification Sends the user a link to verify the given attribute.
+ * @param userSchema The user's type schema. Without it, only server-recorded verified status is shown.
  * @param actions Controls rendered next to the user's name.
  * @param content Renders custom UI in place of the default view, from the user, their visible attributes and
- *   groups, the loading and error state, and the delete, update and lifecycle actions.
+ *   groups, their verification status, the loading and error state, and the allowed actions.
  */
 @Composable
 fun BaseUserDetails(
@@ -69,12 +86,21 @@ fun BaseUserDetails(
     lifecycleActions: List<AccountLifecycleAction> = emptyList(),
     isRunningLifecycleAction: Boolean = false,
     onLifecycleAction: AccountLifecycleHandler? = null,
+    isSendingVerification: Boolean = false,
+    sentVerification: UserAttributeVerificationResult? = null,
+    onSendVerification: ((String) -> Unit)? = null,
+    userSchema: Map<String, PropertyDefinition>? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     content: (@Composable (UserDetailsState) -> Unit)? = null,
 ) {
     val i18n = LocalThunderID.current.i18n
     var draft by remember(user?.id) { mutableStateOf<Map<String, String>?>(null) }
+    var sendingAttribute by remember(user?.id) { mutableStateOf<String?>(null) }
+    val verifiableAttributes = adminVerifiableAttributes(user, hiddenAttributes, userSchema)
+    val sendableAttributes =
+        if (onSendVerification != null) sendableVerificationAttributes(user, verifiableAttributes, userSchema) else emptyList()
     if (content != null) {
+        val send = onSendVerification.takeUnless { sendableAttributes.isEmpty() || isLoading || isUpdating || isSendingVerification }
         Box(modifier = modifier) {
             content(
                 UserDetailsState(
@@ -91,6 +117,12 @@ fun BaseUserDetails(
                     lifecycleActions = offeredLifecycleActions(lifecycleActions, onLifecycleAction, user != null),
                     isRunningLifecycleAction = isRunningLifecycleAction,
                     onLifecycleAction = onLifecycleAction.takeIf { user != null },
+                    verifiableAttributes = verifiableAttributes,
+                    verifiedAttributes = user?.verifiedAttributes,
+                    onSendVerification = send?.let { action -> { name -> if (name in sendableAttributes) action(name) } },
+                    isSendingVerification = isSendingVerification,
+                    sentVerification = sentVerification,
+                    sendableAttributes = sendableAttributes,
                 ),
             )
         }
@@ -137,6 +169,16 @@ fun BaseUserDetails(
         },
     ) {
         error?.let { AdminErrorBanner(it) }
+        if (error == null && sentVerification != null) {
+            if (sentVerification.emailSent == false) {
+                AdminErrorBanner(i18n.resolve("admin.users.details.verification.error"))
+            } else {
+                AdminSuccessNotice(
+                    verificationSentMessage(i18n, sentVerification),
+                    Modifier.testTag(adminTag("user-details", "verification", "sent")),
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AdminMuted(user.ouHandle ?: user.ouId)
             AdminAccessStatus("user-details", user.status?.value)
@@ -181,7 +223,33 @@ fun BaseUserDetails(
                 }
 
                 attributes.isNotEmpty() -> {
-                    AdminDetailList(attributes.map { (name, value) -> AdminDetailItem(name, stringifyAttribute(value)) })
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        attributes.forEachIndexed { index, (name, value) ->
+                            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            if (name in verifiableAttributes) {
+                                UserAttributeVerificationRow(
+                                    block = "user-details",
+                                    name = name,
+                                    value = stringifyAttribute(value),
+                                    isVerified = user.verifiedAttributes?.get(name) != null,
+                                    isSending = isSendingVerification && sendingAttribute == name,
+                                    isUpdating = isLoading || isUpdating || isSendingVerification,
+                                    onSend =
+                                        onSendVerification?.takeIf { name in sendableAttributes }?.let { send ->
+                                            {
+                                                sendingAttribute = name
+                                                send(name)
+                                            }
+                                        },
+                                )
+                            } else {
+                                AdminDetailList(
+                                    listOf(AdminDetailItem(name, stringifyAttribute(value))),
+                                    valueAlignment = TextAlign.End,
+                                )
+                            }
+                        }
+                    }
                 }
 
                 else -> {
@@ -199,6 +267,18 @@ fun BaseUserDetails(
     }
 }
 
+/** The user type to read for its schema: only with [attributeVerification] on and a server that reports status. */
+internal fun verificationUserTypeHandle(
+    user: ManagedUser?,
+    attributeVerification: Boolean,
+): String? = user?.takeIf { attributeVerification && it.verifiedAttributes != null }?.type
+
+/** Whether to offer the Verify action: it is on and the server configures the flow to run. */
+internal fun offersVerificationLink(
+    enabled: Boolean,
+    handle: String?,
+): Boolean = enabled && !handle.isNullOrEmpty()
+
 /**
  * Shows one user, loaded through the user management operations, with the groups it belongs to.
  *
@@ -208,6 +288,11 @@ fun BaseUserDetails(
  *   through its administration flow and is offered only when the server configures that flow and the user's
  *   status allows it. Reading the configured flows needs a token that may read the server configuration, and
  *   happens only while this is on. Off by default.
+ * @param attributeVerification Lets a verification link be sent to the user's unverified email from this view. It
+ *   runs the administrator-initiated verification flow the server configures, and is offered only when it
+ *   configures one (reading it needs a token that may read the server configuration). The user's type, whose
+ *   schema tells which attributes can be verified, is read only while this is on. The user finishes from the link,
+ *   and is read again afterwards. Off by default.
  * @param administrationMode How the delete runs: [AdministrationMode.FLOW] runs the user deletion flow the server
  *   configures, which revokes the user's grants and ends their sessions before the record goes. Defaults to
  *   [AdministrationMode.NATIVE], which calls the API directly.
@@ -221,6 +306,7 @@ fun UserDetails(
     deletable: Boolean = false,
     editable: Boolean = false,
     lifecycleActions: Boolean = false,
+    attributeVerification: Boolean = false,
     administrationMode: AdministrationMode = AdministrationMode.NATIVE,
     onDeleted: (() -> Unit)? = null,
     hiddenAttributes: List<String> = listOf("password"),
@@ -233,7 +319,20 @@ fun UserDetails(
     val groups = rememberGetUserGroups(userId, limit = 100)
     val deletion = rememberDeleteUser(administrationMode = administrationMode)
     val update = rememberUpdateUser()
+    val verificationFlow =
+        rememberResourceQuery(listOf(ADMINISTRATION_FLOWS_QUERY_KEY, "attribute-verification"), attributeVerification) {
+            it.administration.resolveFlowHandles(listOf(AdministrationFlowConfigKey.ADMIN_ATTRIBUTE_VERIFICATION))[
+                AdministrationFlowConfigKey.ADMIN_ATTRIBUTE_VERIFICATION,
+            ]
+        }
+    val verificationHandle = verificationFlow.data
+    val verification = key(userId, verificationHandle) { rememberSendUserAttributeVerification(verificationHandle) }
     val loaded = user.data
+    val typeHandle = verificationUserTypeHandle(loaded, attributeVerification)
+    val userType =
+        rememberResourceQuery(listOf(UserQueryKeys.USER_TYPES, "handle=${typeHandle.orEmpty()}"), enabled = typeHandle != null) {
+            it.userTypes.findByHandle(requireNotNull(typeHandle))
+        }
     val lifecycle =
         rememberAccountLifecycle(
             kind = AccountLifecycleSubjectKind.USER,
@@ -244,14 +343,17 @@ fun UserDetails(
         )
     BaseUserDetails(
         user = loaded,
+        userSchema = userType.data?.schema.takeIf { userType.error == null },
         modifier = modifier,
         groups = groups.data?.groups.orEmpty(),
         error =
             toManagementErrorMessage(i18n, user.error, "admin.users.details.error")
                 ?: toManagementErrorMessage(i18n, deletion.error, "admin.users.details.delete.error")
                 ?: toManagementErrorMessage(i18n, update.error, "admin.users.details.edit.error")
+                ?: toManagementErrorMessage(i18n, verification.error, "admin.users.details.verification.error")
                 ?: toManagementErrorMessage(i18n, lifecycle.error, "admin.common.lifecycle.error")
-                ?: toManagementErrorMessage(i18n, lifecycle.loadError, "admin.common.lifecycle.load_error"),
+                ?: toManagementErrorMessage(i18n, lifecycle.loadError, "admin.common.lifecycle.load_error")
+                ?: toManagementErrorMessage(i18n, verificationFlow.error ?: userType.error, "admin.users.details.verification.load_error"),
         hiddenAttributes = hiddenAttributes,
         isLoading = user.isLoading,
         isDeleting = deletion.isLoading,
@@ -277,6 +379,21 @@ fun UserDetails(
         lifecycleActions = lifecycle.actions,
         isRunningLifecycleAction = lifecycle.isRunning,
         onLifecycleAction = if (lifecycleActions) lifecycle.run else null,
+        isSendingVerification = verification.isLoading,
+        sentVerification = verification.data,
+        onSendVerification =
+            if (offersVerificationLink(attributeVerification, verificationHandle)) {
+                { attribute ->
+                    scope.launch {
+                        if (!update.isLoading && !user.isLoading && !verification.isLoading) {
+                            verification.reset()
+                            verification.mutate(userId to attribute)
+                        }
+                    }
+                }
+            } else {
+                null
+            },
         actions = actions,
         content = content,
     )

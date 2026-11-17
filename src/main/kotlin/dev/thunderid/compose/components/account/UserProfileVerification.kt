@@ -3,20 +3,29 @@
 
 package dev.thunderid.compose.components.account
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -80,18 +89,38 @@ internal fun VerificationStatusLine(
 ) {
     val verified = status == AttributeVerificationStatus.VERIFIED
     val label = i18n.resolve(if (verified) "userProfile.verification.verified" else "userProfile.verification.unverified")
+    VerificationStatusLine(
+        verified = verified,
+        label = label,
+        modifier = Modifier.testTag("thunderid-verification-status-${field.name}"),
+    )
+}
+
+@Composable
+internal fun VerificationStatusLine(
+    verified: Boolean,
+    label: String,
+    modifier: Modifier = Modifier,
+    pill: Boolean = false,
+) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.25f
     val color =
         when {
             verified && dark -> Color(0xFF4ADE80)
             verified -> Color(0xFF166534)
             dark -> Color(0xFFF5B544)
+            pill -> Color(0xFF92400E)
             else -> Color(0xFFB45309)
         }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.testTag("thunderid-verification-status-${field.name}"),
+        modifier =
+            if (pill) {
+                modifier.background(color.copy(alpha = 0.14f), CircleShape).padding(horizontal = 8.dp, vertical = 3.dp)
+            } else {
+                modifier
+            },
     ) {
         Icon(
             painter = painterResource(if (verified) R.drawable.ic_check_circle else R.drawable.ic_alert_circle),
@@ -100,6 +129,31 @@ internal fun VerificationStatusLine(
             modifier = Modifier.size(14.dp),
         )
         Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+    }
+}
+
+@Composable
+internal fun VerificationActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isLoading: Boolean = false,
+    enabled: Boolean = true,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled && !isLoading,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+        contentPadding = PaddingValues(vertical = 13.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(label)
     }
 }
 

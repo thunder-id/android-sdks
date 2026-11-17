@@ -4,6 +4,7 @@
 package dev.thunderid.android.api.management
 
 import com.google.gson.annotations.SerializedName
+import dev.thunderid.android.VerifiedAttribute
 
 /**
  * A user record managed through the ThunderID management API.
@@ -22,6 +23,11 @@ data class ManagedUser(
     val isOwned: Boolean? = null,
     val status: AccessStatus? = null,
     val lastLoginAt: String? = null,
+    /**
+     * The user's verified attributes, keyed by attribute name. Set by the server on a read: `null` when it does
+     * not report verification, and empty when none is verified.
+     */
+    val verifiedAttributes: Map<String, VerifiedAttribute>? = null,
 )
 
 /** A pagination link returned alongside a list response. */

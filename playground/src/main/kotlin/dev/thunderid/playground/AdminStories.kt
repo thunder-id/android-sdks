@@ -75,6 +75,25 @@ private fun stateStories(extra: List<Story> = emptyList()): List<Story> =
 
 private val EMPTY_STORY = Story("empty", "Empty", mapOf("isLoading" to false, "error" to ""))
 
+private val USER_VERIFICATION_PRESET =
+    mapOf(
+        "isLoading" to false,
+        "error" to "",
+        "deletable" to false,
+        "lifecycleActions" to false,
+        "attributeVerification" to true,
+        "emailVerified" to false,
+        "linkSent" to false,
+    )
+
+/** The sample user's email verification states, drawn by the Base variant. */
+private val USER_VERIFICATION_STORIES =
+    listOf(
+        Story("emailUnverified", "Email unverified", USER_VERIFICATION_PRESET),
+        Story("verificationSent", "Verification link sent", USER_VERIFICATION_PRESET + ("linkSent" to true)),
+        Story("emailVerified", "Email verified", USER_VERIFICATION_PRESET + ("emailVerified" to true)),
+    )
+
 private fun createStories(): List<Story> =
     listOf(
         Story("live", "Live", mapOf("isSubmitting" to false, "error" to "")),
@@ -387,6 +406,9 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     ADMINISTRATION_MODE,
                     Control.Bool("lifecycleActions"),
                     ACCESS_STATUS,
+                    Control.Bool("attributeVerification"),
+                    Control.Bool("emailVerified"),
+                    Control.Bool("linkSent"),
                     Control.Bool("isLoading"),
                     Control.Text("error"),
                 ),
@@ -398,10 +420,13 @@ val AdminComponentSpecs: List<ComponentSpec> =
                     "administrationMode" to "native",
                     "lifecycleActions" to true,
                     "status" to "LOCKED",
+                    "attributeVerification" to true,
+                    "emailVerified" to false,
+                    "linkSent" to false,
                     "isLoading" to false,
                     "error" to "",
                 ),
-            stories = stateStories(),
+            stories = stateStories(USER_VERIFICATION_STORIES),
             code = { story, props ->
                 val args = mutableListOf<Pair<String, String>>()
                 if (story == "live") {
@@ -415,11 +440,20 @@ val AdminComponentSpecs: List<ComponentSpec> =
                 } else {
                     args += "user" to "user"
                     args += "groups" to "groups"
+                    args += "userSchema" to "userSchema"
                     if (props.flag("editable")) args += "onUpdate" to "{ attributes -> /* save */ }"
                     if (props.flag("deletable")) args += "onDelete" to "{ /* delete */ }"
                     args.state(props)
                 }
                 args.lifecycle(story, props, "USER")
+                if (props.flag("attributeVerification")) {
+                    if (story == "live") {
+                        args += "attributeVerification" to "true"
+                    } else {
+                        args += "onSendVerification" to "{ attribute -> client.users.sendAttributeVerification(user.id, attribute) }"
+                        if (props.flag("linkSent")) args += "sentVerification" to "sentVerification"
+                    }
+                }
                 call(if (story == "live") "UserDetails" else "BaseUserDetails", args)
             },
         ),

@@ -93,4 +93,15 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+
+    // ktlint-cli 1.8.0 pulls in logback 1.3.16. Move the ktlint tool classpath to the
+    // logback 1.5.x line. The SDK and playground classpaths do not depend on logback.
+    constraints {
+        add("ktlint", "ch.qos.logback:logback-classic:1.5.38") {
+            because("ktlint-cli 1.8.0 pulls in logback 1.3.16")
+        }
+        add("ktlint", "ch.qos.logback:logback-core:1.5.38") {
+            because("ktlint-cli 1.8.0 pulls in logback 1.3.16")
+        }
+    }
 }

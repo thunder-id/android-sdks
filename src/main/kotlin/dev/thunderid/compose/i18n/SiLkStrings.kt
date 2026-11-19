@@ -448,5 +448,5 @@ internal object SiLkStrings {
             "deviceGrant.messages.expired" to "කේතය කල් ඉකුත් විය",
             "deviceGrant.messages.expiredDescription" to
                 "මෙම කේතය තවදුරටත් වලංගු නැත. ඔබගේ උපාංගය වෙත ආපසු ගොස් නැවත ආරම්භ කරන්න.",
-        )
+        ) + SiLkAgentStrings.all
 }

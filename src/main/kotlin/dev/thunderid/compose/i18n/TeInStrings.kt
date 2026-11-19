@@ -453,5 +453,5 @@ internal object TeInStrings {
             "deviceGrant.messages.expired" to "కోడ్ గడువు ముగిసింది",
             "deviceGrant.messages.expiredDescription" to
                 "ఈ కోడ్ ఇకపై చెల్లదు. మీ పరికరానికి తిరిగి వెళ్లి మళ్లీ ప్రారంభించండి.",
-        )
+        ) + TeInAgentStrings.all
 }

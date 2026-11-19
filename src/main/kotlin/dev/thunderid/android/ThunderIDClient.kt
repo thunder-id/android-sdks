@@ -7,6 +7,8 @@ import dev.thunderid.android.api.account.AccessibleOrganizationUnits
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsResponse
 import dev.thunderid.android.api.account.CurrentOrganizationUnit
+import dev.thunderid.android.api.account.SuspendAllMeAgentsResponse
+import dev.thunderid.android.api.account.UpdateMeAgentRequest
 import dev.thunderid.android.api.account.currentOrganizationUnitFrom
 import dev.thunderid.android.api.auth.AuthorizationDetailsTypesClient
 import dev.thunderid.android.api.auth.CIBAInitiateOptions
@@ -22,6 +24,8 @@ import dev.thunderid.android.api.auth.SwitchOrganizationUnitOptions
 import dev.thunderid.android.api.auth.encodeQuery
 import dev.thunderid.android.api.auth.withErrorAsFailureReason
 import dev.thunderid.android.api.management.AdministrationClient
+import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.AgentListResponse
 import dev.thunderid.android.api.management.AgentTypesClient
 import dev.thunderid.android.api.management.AgentsClient
 import dev.thunderid.android.api.management.ApplicationsClient
@@ -1070,6 +1074,78 @@ class ThunderIDClient internal constructor(
     ) {
         requireInitialized()
         httpClient!!.post<Unit>("/users/me/update-credentials", mapOf("attributes" to mapOf(attribute to newValue)))
+    }
+
+    // MARK: - Personal agents
+
+    /**
+     * Returns a page of the agents the signed-in user owns, in the organization unit the access token names, from
+     * `GET /users/me/agents`. Pass [dev.thunderid.android.api.management.AgentKind.PERSONAL] as [kind] to list only
+     * personal agents.
+     *
+     * These are the user's own requests: like the other `/users/me` operations they go through the SDK's own
+     * transport with the user's token, never `ThunderIDConfig.http.fetcher`. The token must be the user's own: a
+     * delegated token, such as an agent's token for its owner, is refused.
+     */
+    suspend fun getMeAgents(
+        kind: String? = null,
+        limit: Int? = null,
+        offset: Int? = null,
+    ): AgentListResponse =
+        meAgents().request(
+            "GET",
+            query = mapOf("kind" to kind, "limit" to limit?.toString(), "offset" to offset?.toString()),
+            fetcher = null,
+        )
+
+    /**
+     * Returns one of the signed-in user's agents. An agent the user does not own, or one outside the organization
+     * unit the access token names, is not found.
+     */
+    suspend fun getMeAgent(id: String): Agent = meAgents().request("GET", listOf(id), query = mapOf("include" to "display"), fetcher = null)
+
+    /**
+     * Replaces the part of one of the signed-in user's personal agents its owner may change, and returns the
+     * updated agent. Read the agent first and send its editable fields back with the changes.
+     */
+    suspend fun updateMeAgent(
+        id: String,
+        request: UpdateMeAgentRequest,
+    ): Agent = meAgents().request("PUT", listOf(id), body = request, fetcher = null)
+
+    /** Deletes one of the signed-in user's personal agents. */
+    suspend fun deleteMeAgent(id: String) {
+        meAgents().request<Unit>("DELETE", listOf(id), fetcher = null)
+    }
+
+    /**
+     * Suspends one of the signed-in user's personal agents, after the server revokes the tokens issued to it. The
+     * owner's suspension is independent of the organization's, and suspending again changes nothing.
+     * [dev.thunderid.android.api.account.MeAgentSuspensionAction.available] says whether to offer it.
+     */
+    suspend fun suspendMeAgent(id: String) {
+        meAgents().request<Unit>("POST", listOf(id, "suspend"), fetcher = null)
+    }
+
+    /**
+     * Lifts the signed-in user's own suspension of one of their personal agents. A suspension another party
+     * placed, such as the organization's, stays in force.
+     */
+    suspend fun unsuspendMeAgent(id: String) {
+        meAgents().request<Unit>("POST", listOf(id, "unsuspend"), fetcher = null)
+    }
+
+    /**
+     * Suspends every personal agent of the signed-in user that the user has not already suspended, in the
+     * organization unit the access token names, after the server revokes the tokens issued to each.
+     */
+    suspend fun suspendAllMeAgents(): SuspendAllMeAgentsResponse = meAgents().request("POST", listOf("suspend"), fetcher = null)
+
+    /** `/users/me/agents` on the API base, through the SDK's own transport: no `http.fetcher`. */
+    private fun meAgents(): ManagementTransport {
+        val cfg = requireConfig()
+        val http = httpClient ?: throw IAMException(ThunderIDErrorCode.SDK_NOT_INITIALIZED, "Call initialize() before using the SDK")
+        return ManagementTransport(http, "${apiBaseUrl ?: cfg.baseUrl}/users/me/agents", fetcher = null)
     }
 
     // MARK: - Self user attribute verification

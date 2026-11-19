@@ -462,5 +462,5 @@ internal object FrFrStrings {
             "deviceGrant.messages.expired" to "Code expiré",
             "deviceGrant.messages.expiredDescription" to
                 "Ce code n'est plus valide. Revenez à votre appareil et recommencez.",
-        )
+        ) + FrFrAgentStrings.all
 }

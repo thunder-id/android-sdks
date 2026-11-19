@@ -438,5 +438,5 @@ internal object JaJpStrings {
             "deviceGrant.messages.failedDescription" to "デバイスに戻り、もう一度開始してください。",
             "deviceGrant.messages.expired" to "コードの有効期限が切れました",
             "deviceGrant.messages.expiredDescription" to "このコードは無効になりました。デバイスに戻り、もう一度開始してください。",
-        )
+        ) + JaJpAgentStrings.all
 }

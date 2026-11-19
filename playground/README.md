@@ -10,7 +10,7 @@ next time you run it. It is a development tool, not a sample: for a minimal inte
 - **Checks**: capability checks that call the real SDK and report pass or fail with a reason.
   Sign-in through the system browser (Custom Tabs), app-native sign-in (`SignIn`), passkeys
   (Credential Manager), sign-out, the redirect callback, token refresh, secure token storage,
-  user info, theming, and translations. Capabilities the Android SDK has no API for (biometric
+  user info, the signed-in user's personal agents, theming, and translations. Capabilities the Android SDK has no API for (biometric
   unlock, organizations) are shown as unavailable. "Run all checks" runs everything that does not
   need interaction; the browser sign-in, app-native sign-in, and sign-out checks run on tap. The
   summary card also probes the server's `/health/readiness` endpoint.
@@ -36,7 +36,10 @@ next time you run it. It is a development tool, not a sample: for a minimal inte
   story uses; the details stories also take the ID from Controls or from the Management checks.
   `ProjectList`, `ProjectCreate`, `ProjectDetails`, `ProjectSwitcher`, `OrganizationUnitList`,
   `OrganizationUnitCreate`, `OrganizationUnitDetails`, `SharingPolicies` and `DeviceGrant` each have
-  **Base**, **Live** and **Custom rendering** stories. The project picked in the live `ProjectSwitcher` story
+  **Base**, **Live** and **Custom rendering** stories. `PersonalAgentList` and `PersonalAgentDetails`, under **User**, have
+  **Sample**, **Live** and **Custom rendering** stories, with the details shown as
+  suspended by the user or by the organization; picking an agent in the live list sets the one the live details
+  story shows. The project picked in the live `ProjectSwitcher` story
   scopes the live `ApplicationList` and `AgentList` stories, and the live `ApplicationCreate` and `AgentCreate`
   stories create in it when no `ouId` is set.
   `UserDetails` also has **Email unverified**, **Verification link sent**, and **Email verified** stories with a

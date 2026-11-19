@@ -23,6 +23,7 @@ import dev.thunderid.android.FlowComponent
 import dev.thunderid.android.FlowStatus
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
+import dev.thunderid.android.api.account.MeAgentSuspensionAction
 import dev.thunderid.android.api.account.OrganizationUnitScope
 import dev.thunderid.android.api.auth.CIBAInitiateOptions
 import dev.thunderid.android.api.auth.FederatedAuthSession
@@ -32,6 +33,7 @@ import dev.thunderid.android.api.auth.customTabBrowser
 import dev.thunderid.android.api.management.AccessStatusValue
 import dev.thunderid.android.api.management.AccountLifecycleSubjectKind
 import dev.thunderid.android.api.management.AdministrationFlowConfigKey
+import dev.thunderid.android.api.management.AgentKind
 import dev.thunderid.android.api.management.GroupMemberType
 import dev.thunderid.android.api.management.NotificationChannel
 import dev.thunderid.android.api.management.RoleAssigneeType
@@ -39,6 +41,7 @@ import dev.thunderid.android.api.management.accountLifecycleActions
 import dev.thunderid.android.api.management.getFlowVariableDefinitions
 import dev.thunderid.android.api.management.getTokenPermissions
 import dev.thunderid.android.api.management.hasPermission
+import dev.thunderid.android.api.management.resolveAgentName
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.i18n.DefaultStrings
 import dev.thunderid.compose.i18n.ThunderIDI18n
@@ -85,6 +88,7 @@ val CheckDefs =
         CheckDef("user", "Session", "User info", "client.getUser()"),
         CheckDef("verification", "Session", "Attribute verification", "verifyAttribute() · verifiedAttributes"),
         CheckDef("orgs", "Session", "Organization units", "getAccessibleOrganizationUnits() · getCurrentOrganizationUnit()"),
+        CheckDef("personalAgents", "Session", "Personal agents", "getMeAgents() · getMeAgent()"),
         CheckDef(
             "ouSwitch",
             "Session",
@@ -280,6 +284,7 @@ class ChecksController(
             "user" -> userInfo(state)
             "verification" -> attributeVerification(state)
             "orgs" -> organizationUnitsOfUser(state)
+            "personalAgents" -> personalAgents(state)
             "ouSwitch" -> switchOrganizationUnit(state, interactive)
             "par" -> pushedAuthorization(state)
             "ciba" -> ciba(state, interactive)
@@ -494,6 +499,22 @@ class ChecksController(
             "${page.totalResults} accessible, ${siblings.totalResults} siblings, current=${page.current}, " +
                 "session unit=${current?.handle ?: current?.id ?: "none in claims"}",
         )
+    }
+
+    /** Lists the signed-in user's personal agents and reads the first, without changing anything. */
+    private suspend fun personalAgents(state: ThunderIDState): CheckResult {
+        if (!state.isSignedIn) return fail("Not signed in. Sign in first.")
+        val page = state.client.getMeAgents(AgentKind.PERSONAL, limit = 20)
+        val first = page.agents.firstOrNull() ?: return pass("The user owns no personal agents")
+        val agent = state.client.getMeAgent(first.id)
+        PersonalAgentFixture.agentId = agent.id
+        val suspension =
+            if (MeAgentSuspensionAction.available(agent.status) == MeAgentSuspensionAction.UNSUSPEND) {
+                "suspended by the user"
+            } else {
+                agent.status?.value?.lowercase() ?: "no status"
+            }
+        return pass("${page.totalResults} personal agents; ${resolveAgentName(agent)} is $suspension")
     }
 
     private suspend fun switchOrganizationUnit(

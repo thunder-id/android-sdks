@@ -448,5 +448,5 @@ internal object HiInStrings {
             "deviceGrant.messages.expired" to "कोड की समय-सीमा समाप्त",
             "deviceGrant.messages.expiredDescription" to
                 "यह कोड अब मान्य नहीं है। अपने डिवाइस पर लौटें और फिर से शुरू करें।",
-        )
+        ) + HiInAgentStrings.all
 }

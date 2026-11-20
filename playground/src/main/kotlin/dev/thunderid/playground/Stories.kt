@@ -247,4 +247,8 @@ val ComponentSpecs: List<ComponentSpec> =
                     "    onComplete = { /* signed in */ },\n    onError = { message -> /* show message */ },\n)"
             },
         ),
-    ) + AdminComponentSpecs + CustomRenderSpecs + OrganizationUnitSpecs + ProjectSpecs
+    ).let { specs ->
+        // The personal agent components belong to the signed-in user, so they follow the other User components.
+        val afterUser = specs.indexOfLast { it.group == "User" } + 1
+        specs.take(afterUser) + PersonalAgentSpecs + specs.drop(afterUser)
+    } + AdminComponentSpecs + CustomRenderSpecs + OrganizationUnitSpecs + ProjectSpecs

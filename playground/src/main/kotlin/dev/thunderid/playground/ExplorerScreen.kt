@@ -416,6 +416,10 @@ private fun StoryPreview(
             ProjectStoryPreview(componentId, storyId, props, onTap)
         }
 
+        in PersonalAgentSpecs.map { it.id } -> {
+            PersonalAgentStoryPreview(componentId, storyId, props, onTap)
+        }
+
         in CustomRenderSpecs.map { it.id } -> {
             CustomRenderPreview(componentId, storyId, props, onTap)
         }

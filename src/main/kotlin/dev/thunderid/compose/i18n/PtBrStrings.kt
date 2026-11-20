@@ -459,5 +459,5 @@ internal object PtBrStrings {
             "deviceGrant.messages.expired" to "Código expirado",
             "deviceGrant.messages.expiredDescription" to
                 "Este código não é mais válido. Volte ao seu dispositivo e comece novamente.",
-        )
+        ) + PtBrAgentStrings.all
 }

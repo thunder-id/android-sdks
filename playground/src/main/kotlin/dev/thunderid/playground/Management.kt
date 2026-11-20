@@ -13,6 +13,8 @@ import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.ThunderIDHttpResponse
 import dev.thunderid.android.VerifiedAttribute
 import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.AgentKind
+import dev.thunderid.android.api.management.AgentOwner
 import dev.thunderid.android.api.management.Application
 import dev.thunderid.android.api.management.BasicAgent
 import dev.thunderid.android.api.management.BasicApplication
@@ -254,6 +256,14 @@ object AdminSamples {
                 clientId = "billing-assistant",
             ),
             BasicAgent(id = "agt-2", ouId = "ou-root", type = "assistant", display = "Support triage", clientId = "support-triage"),
+            BasicAgent(
+                id = "agt-3",
+                ouId = "ou-root",
+                type = "assistant",
+                display = "Spending assistant",
+                clientId = "spend-assistant",
+                kind = AgentKind.PERSONAL,
+            ),
         )
 
     val agent =
@@ -263,7 +273,7 @@ object AdminSamples {
             type = "assistant",
             display = "Billing assistant",
             description = "Answers billing questions",
-            owner = "usr-1",
+            owner = AgentOwner("usr-1"),
             clientId = "billing-assistant",
         )
 

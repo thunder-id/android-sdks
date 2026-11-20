@@ -458,5 +458,5 @@ internal object TaInStrings {
             "deviceGrant.messages.expired" to "குறியீடு காலாவதியானது",
             "deviceGrant.messages.expiredDescription" to
                 "இந்தக் குறியீடு இனி செல்லாது. உங்கள் சாதனத்திற்குத் திரும்பி மீண்டும் தொடங்கவும்.",
-        )
+        ) + TaInAgentStrings.all
 }

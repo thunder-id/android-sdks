@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import dev.thunderid.android.api.management.Agent
+import dev.thunderid.android.api.management.AgentOwner
 import dev.thunderid.android.api.management.CreateAgentRequest
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.management.rememberCreateAgent
@@ -154,7 +155,7 @@ fun AgentCreate(
                             type = submission.type,
                             attributes = mapOf("name" to submission.name),
                             description = submission.description,
-                            owner = owner,
+                            owner = owner?.let { AgentOwner(it) },
                         ),
                     )?.let { onCreated?.invoke(it) }
             }

@@ -17,7 +17,14 @@ import dev.thunderid.android.ThunderIDFetcher
 data class AccessStatus(
     val value: String? = null,
     val details: AccessStatusDetails? = null,
-)
+) {
+    /**
+     * Who holds the identity suspended (see [SuspensionAppliedBy]), from [AccessStatusDetails.appliedBy]. Empty
+     * unless the status is `SUSPENDED`.
+     */
+    val suspendedBy: List<String>
+        get() = if (value == AccessStatusValue.SUSPENDED) details?.appliedBy.orEmpty() else emptyList()
+}
 
 /** The values [AccessStatus.value] takes. */
 object AccessStatusValue {
@@ -29,17 +36,34 @@ object AccessStatusValue {
 /**
  * Why an account is locked or suspended.
  *
- * @property reason `FAILED_ATTEMPTS`, `SUSPENSION_RELEASE_LOCK` or `ADMINISTRATIVE_SUSPENSION`.
+ * @property reason `FAILED_ATTEMPTS`, `SUSPENSION_RELEASE_LOCK`, `ADMINISTRATIVE_SUSPENSION`, `OWNER_SUSPENSION` or
+ *   `CASCADED_SUSPENSION`.
  * @property since When the operator placed the hold. Absent for an automatic lock.
  * @property operatorNote The note the operator entered when placing the hold.
  * @property lockedMethods The automatic locks in force. Present only while the status is `LOCKED`.
+ * @property appliedBy Who placed each suspension in force (see [SuspensionAppliedBy]). Present only while the
+ *   status is `SUSPENDED`, and only for an identity that more than the organization can suspend, such as a
+ *   personal agent. `null` means the organization's.
  */
 data class AccessStatusDetails(
     val reason: String? = null,
     val since: String? = null,
     val operatorNote: String? = null,
     val lockedMethods: List<LockedMethod>? = null,
+    val appliedBy: List<String>? = null,
 )
+
+/**
+ * Who placed a suspension: the organization, the identity's owner (such as the owner of an agent), or [CASCADE]
+ * for one carried from the identity it depends on, such as a personal agent's owner, while that identity is
+ * suspended. Each suspension is independent and is lifted only by whoever placed it. A party this SDK does not
+ * know keeps its raw value.
+ */
+object SuspensionAppliedBy {
+    const val CASCADE = "cascade"
+    const val ORGANIZATION = "organization"
+    const val OWNER = "owner"
+}
 
 /** One automatic lock: the locked [method] (or `entity` for the whole account) and when it expires, if it does. */
 data class LockedMethod(
@@ -160,16 +184,31 @@ private val ACTIONS_BY_STATUS: Map<String, List<AccountLifecycleAction>> =
  *   as `ACTIVE`; a status this SDK does not know offers nothing.
  * @param configuredFlows The flows the server configures, keyed by `flow` server-config key, as
  *   [AdministrationClient.resolveFlows] returns them.
+ * @param appliedBy Who holds a suspension, from [AccessStatusDetails.appliedBy]. The organization lifts only its
+ *   own suspension: a suspension held only by others, such as an agent's owner, offers the organization's own
+ *   suspension instead of an unsuspend. `null` or empty reads as the organization's.
  * @return The actions to offer, most expected first.
  */
 fun accountLifecycleActions(
     kind: AccountLifecycleSubjectKind,
     status: String?,
     configuredFlows: Map<String, String>,
-): List<AccountLifecycleAction> =
-    ACTIONS_BY_STATUS[status ?: AccessStatusValue.ACTIVE].orEmpty().filter { action ->
+    appliedBy: List<String>? = null,
+): List<AccountLifecycleAction> {
+    val heldByOthersOnly =
+        status == AccessStatusValue.SUSPENDED &&
+            !appliedBy.isNullOrEmpty() &&
+            SuspensionAppliedBy.ORGANIZATION !in appliedBy
+    val allowed =
+        if (heldByOthersOnly) {
+            listOf(AccountLifecycleAction.SUSPEND)
+        } else {
+            ACTIONS_BY_STATUS[status ?: AccessStatusValue.ACTIVE].orEmpty()
+        }
+    return allowed.filter { action ->
         kind.flowConfigKeys[action]?.let { !configuredFlows[it].isNullOrEmpty() } == true
     }
+}
 
 /**
  * Runs [action] on the [kind] of identity [subject] through its flow, as the matching resource operation

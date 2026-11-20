@@ -105,5 +105,5 @@ object DefaultStrings {
             "deviceGrant.messages.expired" to "Code expired",
             "deviceGrant.messages.expiredDescription" to
                 "The code is no longer valid. Return to your device and start again.",
-        ) + AdminStrings.all
+        ) + AdminStrings.all + PersonalAgentStrings.all
 }

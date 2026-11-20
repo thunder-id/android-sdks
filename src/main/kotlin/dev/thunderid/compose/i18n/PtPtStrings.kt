@@ -458,5 +458,5 @@ internal object PtPtStrings {
             "deviceGrant.messages.expired" to "Código expirado",
             "deviceGrant.messages.expiredDescription" to
                 "Este código já não é válido. Regresse ao seu dispositivo e comece novamente.",
-        )
+        ) + PtPtAgentStrings.all
 }

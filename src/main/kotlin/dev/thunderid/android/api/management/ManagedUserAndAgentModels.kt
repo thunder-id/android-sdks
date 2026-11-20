@@ -114,6 +114,40 @@ data class AgentInboundAuthConfig(
 /** Login consent configuration of an agent. */
 data class AgentLoginConsentConfig(
     val validityPeriod: Int? = null,
+    /**
+     * Asks for consent on every authorization, even when an earlier consent covers it. The server defaults it to
+     * `true` for a personal agent and to `false` otherwise.
+     */
+    val alwaysPrompt: Boolean? = null,
+)
+
+/**
+ * The kinds an agent can have. A kind is set when the agent is created and never changed, and can add rules of
+ * its own. An agent with no kind is an ordinary agent; a kind this SDK does not know keeps its raw value.
+ */
+object AgentKind {
+    /** A personal agent: one that acts only for its owner, a user. */
+    const val PERSONAL = "personal-assistant"
+}
+
+/** The values [AgentOwner.idType] takes. A type this SDK does not know keeps its raw value. */
+object AgentOwnerIdType {
+    const val UUID = "uuid"
+    const val EMAIL = "email"
+    const val MOBILE = "mobile"
+}
+
+/**
+ * The person accountable for an agent. A local owner is an entity of the same deployment and is named by its
+ * entity ID. An owner managed in another identity system is not looked up.
+ *
+ * @property idType What [id] holds (see [AgentOwnerIdType]). `null` reads as `uuid`, and a local owner must be one.
+ * @property isLocal Whether the owner is an entity of this deployment. `null` reads as `true`.
+ */
+data class AgentOwner(
+    val id: String,
+    val idType: String? = null,
+    val isLocal: Boolean? = null,
 )
 
 /**
@@ -129,7 +163,9 @@ data class Agent(
     val ouHandle: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
-    val owner: String? = null,
+    val owner: AgentOwner? = null,
+    /** The agent's kind (see [AgentKind]), set when it is created and never changed. `null` for an ordinary agent. */
+    val kind: String? = null,
     val clientId: String? = null,
     val attributes: Map<String, Any?>? = null,
     val allowedUserTypes: List<String>? = null,
@@ -159,6 +195,8 @@ data class BasicAgent(
     val attributes: Map<String, Any?>? = null,
     val isReadOnly: Boolean? = null,
     val status: AccessStatus? = null,
+    /** The agent's kind (see [AgentKind]), set when it is created and never changed. `null` for an ordinary agent. */
+    val kind: String? = null,
 )
 
 /** A page of agents. */
@@ -181,10 +219,15 @@ data class CreateAgentRequest(
     val type: String,
     val description: String? = null,
     val logoUrl: String? = null,
-    val owner: String? = null,
+    val owner: AgentOwner? = null,
     val attributes: Map<String, Any?>? = null,
     val inboundAuthConfig: List<AgentInboundAuthConfig>? = null,
     val projectId: String? = null,
+    /**
+     * The agent's kind (see [AgentKind]), fixed once the agent is created. Leave it `null` for an ordinary agent.
+     * A kind can add requirements of its own: [AgentKind.PERSONAL] requires [owner] to name a local user.
+     */
+    val kind: String? = null,
 )
 
 /** The payload used to update an agent. The agent's name goes in [attributes] as `name`. */
@@ -193,7 +236,7 @@ data class UpdateAgentRequest(
     val type: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
-    val owner: String? = null,
+    val owner: AgentOwner? = null,
     val attributes: Map<String, Any?>? = null,
     val allowedUserTypes: List<String>? = null,
     val allowedAgentTypes: List<String>? = null,
@@ -237,4 +280,10 @@ object AgentQueryKeys {
     const val AGENT = "agent"
     const val AGENTS = "agents"
     const val AGENT_TYPES = "agent-types"
+
+    /** One of the signed-in user's own agents, read through `/users/me/agents`. */
+    const val ME_AGENT = "me-agent"
+
+    /** The signed-in user's own agents, listed through `/users/me/agents`. */
+    const val ME_AGENTS = "me-agents"
 }

@@ -31,8 +31,13 @@ internal class FlowExecutionClient(
     ): EmbeddedFlowResponse {
         val body = initiateBody(applicationId, flowType, organizationUnitId, inputs, sessionData)
         return httpClient
-            .post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false, headers = attestationTokenHeaders(attestationToken))
-            .withErrorAsFailureReason()
+            .post<EmbeddedFlowResponse>(
+                "/flow/execute",
+                body,
+                requiresAuth = false,
+                headers = attestationTokenHeaders(attestationToken),
+                observe = false,
+            ).withErrorAsFailureReason()
     }
 
     suspend fun submit(
@@ -46,7 +51,7 @@ internal class FlowExecutionClient(
         if (inputs.isNotEmpty()) body["inputs"] = inputs
         val response =
             try {
-                httpClient.post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false)
+                httpClient.post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false, observe = false)
             } catch (e: IAMException) {
                 if (e.serverError?.code != EXECUTION_NOT_FOUND_CODE) throw e
                 throw IAMException(ThunderIDErrorCode.FLOW_EXPIRED, "The flow execution expired", e, e.serverError)
@@ -97,7 +102,7 @@ internal class FlowExecutionClient(
     ): EmbeddedFlowResponse {
         val response =
             try {
-                httpClient.send<EmbeddedFlowResponse>("POST", url, Gson().toJson(body)) { response ->
+                httpClient.send<EmbeddedFlowResponse>("POST", url, Gson().toJson(body), observe = false) { response ->
                     if (response.statusCode in REFUSAL_STATUSES) {
                         ServerError.parse(response.body, allowOAuth = false)?.let { selfFlowRefused() }
                     } else {

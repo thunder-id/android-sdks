@@ -53,11 +53,13 @@ import dev.thunderid.android.backend.BackendClient
 import dev.thunderid.android.backend.BackendSessionStore
 import dev.thunderid.android.backend.resolveBackendEndpoints
 import dev.thunderid.android.http.HttpClient
+import dev.thunderid.android.telemetry.ClientTelemetry
 import dev.thunderid.android.token.JWKSCache
 import dev.thunderid.android.token.TokenRefresher
 import dev.thunderid.android.token.TokenStore
 import dev.thunderid.android.token.TokenValidator
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -78,6 +80,8 @@ private val INTERACTION_ERRORS =
 class ThunderIDClient internal constructor(
     // Replaces the built-in HTTP transport. Tests use it to answer without a network.
     private val transport: ThunderIDFetcher?,
+    // Where telemetry sends its batches. Tests use it to control time.
+    private val telemetryScope: CoroutineScope? = null,
 ) {
     constructor() : this(null)
 
@@ -98,6 +102,9 @@ class ThunderIDClient internal constructor(
     private var loading = false
     private var currentUser: User? = null
     private var backend: BackendClient? = null
+
+    /** Usage telemetry, when `telemetry.endpoint` is set. */
+    @Volatile private var telemetry: ClientTelemetry? = null
 
     /** Where the SDK's own API calls go: `baseUrl`, or the API base in backend mode. */
     private var apiBaseUrl: String? = null
@@ -145,16 +152,18 @@ class ThunderIDClient internal constructor(
             val cfg =
                 this.config
                     ?: throw IAMException(ThunderIDErrorCode.SDK_NOT_INITIALIZED, "Not initialized")
-            tokenRefresher!!.getAccessToken(cfg.clientId)
+            refreshingAccessToken(cfg)
         }
         httpClient = http
         backend =
             backendEndpoints?.let { endpoints ->
                 BackendClient(endpoints, BackendSessionStore(adapter, config.vendor, config.instanceId), store, http) {
+                    telemetry?.sessionExpired()
                     currentUser = null
                     sessionEndedEvents.tryEmit(Unit)
                 }
             }
+        startTelemetry(config, apiBase, adapter, store, http)
         backend?.let { backend ->
             // The backend holds the tokens, so the SDK's own calls carry the session handle instead.
             http.routeThroughBackend { request, fetcher -> backend.send(request, fetcher) }
@@ -341,7 +350,23 @@ class ThunderIDClient internal constructor(
     suspend fun signIn(
         payload: EmbeddedSignInPayload,
         request: EmbeddedFlowRequestConfig,
-    ): EmbeddedFlowResponse = executeSignInFlow(payload, request, sessionData = null)
+    ): EmbeddedFlowResponse {
+        val response =
+            try {
+                executeSignInFlow(payload, request, sessionData = null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                telemetry?.signInFailed(e)
+                throw e
+            }
+        when (response.flowStatus) {
+            FlowStatus.COMPLETE -> if (!response.assertion.isNullOrEmpty()) telemetry?.signedIn()
+            FlowStatus.ERROR -> telemetry?.signInFailed(response.error?.code)
+            else -> Unit
+        }
+        return response
+    }
 
     /** Runs one sign-in flow step. [sessionData] goes on the request that starts the flow. */
     private suspend fun executeSignInFlow(
@@ -459,7 +484,22 @@ class ThunderIDClient internal constructor(
         return "${oauth.authorizeUrl(unit)}?" + encodeQuery(listOf("client_id" to clientId, "request_uri" to requestUri))
     }
 
-    suspend fun handleRedirectCallback(url: String): User = completeRedirect(url, switching = false)
+    suspend fun handleRedirectCallback(url: String): User = reportingSignIn { completeRedirect(url, switching = false) }
+
+    /** Runs a sign-in, reporting it once it succeeds and its error code when it fails. */
+    private suspend inline fun <T> reportingSignIn(signIn: () -> T): T {
+        val result =
+            try {
+                signIn()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                telemetry?.signInFailed(e)
+                throw e
+            }
+        telemetry?.signedIn()
+        return result
+    }
 
     private suspend fun completeRedirect(
         url: String,
@@ -786,7 +826,7 @@ class ThunderIDClient internal constructor(
                 "auth_req_id" to authReqId,
                 "client_id" to requireClientId(cfg),
             )
-        return oauthClient!!.pollToken(form, interval).also { replaceSession(it) }
+        return reportingSignIn { oauthClient!!.pollToken(form, interval).also { replaceSession(it) } }
     }
 
     /**
@@ -820,7 +860,7 @@ class ThunderIDClient internal constructor(
                 "device_code" to deviceCode,
                 "client_id" to requireClientId(cfg),
             )
-        return oauthClient!!.pollToken(form, interval).also { replaceSession(it) }
+        return reportingSignIn { oauthClient!!.pollToken(form, interval).also { replaceSession(it) } }
     }
 
     /** [pollDeviceAuthorization] for the request [authorization] started. */
@@ -864,6 +904,8 @@ class ThunderIDClient internal constructor(
 
     suspend fun signOut(options: SignOutOptions? = null): String {
         requireInitialized()
+        // Reported, and what is waiting sent with the session's token, before the session is cleared.
+        telemetry?.signedOut()
         loading = true
         backend?.let { backend ->
             return try {
@@ -942,7 +984,7 @@ class ThunderIDClient internal constructor(
                 ThunderIDErrorCode.UNSUPPORTED_OPERATION,
                 "httpRequest needs endpoints.backend: without it, call your API with getAccessToken()",
             )
-        return backend.send(request)
+        return backend.send(request).also { httpClient?.observe(request, it) }
     }
 
     // MARK: - Registration
@@ -962,6 +1004,8 @@ class ThunderIDClient internal constructor(
             }
         tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
         establishSessionIfNeeded(response)
+        // A sign-up that ends signed in starts a sign-in session.
+        if (response.flowStatus == FlowStatus.COMPLETE && !response.assertion.isNullOrEmpty()) telemetry?.signedIn()
         return response
     }
 
@@ -974,7 +1018,130 @@ class ThunderIDClient internal constructor(
     suspend fun getAccessToken(): String {
         requireInitialized()
         backend?.let { return it.getAccessToken() }
-        return tokenRefresher!!.getAccessToken(config?.clientId)
+        return refreshingAccessToken(requireConfig())
+    }
+
+    /**
+     * The access token, refreshed when it is near expiry. A refresh the server refuses ends the session,
+     * which telemetry reports.
+     */
+    private suspend fun refreshingAccessToken(cfg: ThunderIDConfig): String =
+        try {
+            tokenRefresher!!.getAccessToken(cfg.clientId)
+        } catch (e: IAMException) {
+            if (e.code == ThunderIDErrorCode.INVALID_GRANT) telemetry?.sessionExpired()
+            throw e
+        }
+
+    // MARK: - Telemetry
+
+    /**
+     * Reports an event the app names, for what is neither a screen, an API call, a sign-in nor a link. Does
+     * nothing unless `telemetry` is configured.
+     *
+     * @param name The event's name, `<type>.<action>`; the configured prefix is added.
+     * @param data Codes about it. Never a name, an email address or anything a user typed.
+     */
+    fun track(
+        name: String,
+        data: Map<String, String> = emptyMap(),
+    ) {
+        telemetry?.track(name, data)
+    }
+
+    /**
+     * Reports a screen view from its route pattern, such as `/applications/{id}`, never the filled-in route.
+     * The Compose helpers call it. Does nothing unless `telemetry` is configured.
+     */
+    fun trackPageView(pattern: String) {
+        telemetry?.page(pattern)
+    }
+
+    /**
+     * Reports that the app opened [url], a link that leaves the app, as `link.open` with its host and path
+     * only. Only `http` and `https` links are reported. Does nothing unless `telemetry` is configured.
+     */
+    fun trackLink(url: String) {
+        telemetry?.link(url)
+    }
+
+    /**
+     * Sends the waiting telemetry events now, in the background, such as when the app moves to the
+     * background. [dev.thunderid.compose.ThunderIDProvider] calls it. Does nothing unless `telemetry` is
+     * configured.
+     */
+    fun flushTelemetry() {
+        telemetry?.flush()
+    }
+
+    /** Starts telemetry for [config], replacing any earlier one, and watches the SDK's HTTP client for it. */
+    private fun startTelemetry(
+        config: ThunderIDConfig,
+        apiBase: String,
+        storage: StorageAdapter,
+        store: TokenStore,
+        http: HttpClient,
+    ) {
+        // The one replaced sends what it can, then stops, so its timer does not keep running.
+        telemetry?.let {
+            it.flush()
+            it.stop()
+        }
+        telemetry = null
+        val started =
+            ClientTelemetry.create(
+                thunderConfig = config,
+                apiBases = listOf(apiBase) + managementBases(config.endpoints),
+                backendMode = backend != null,
+                storage = storage,
+                claims = { telemetryClaims(store) },
+                accessToken = { store.accessToken() },
+                fetcher = transport,
+                scope = telemetryScope,
+            ) ?: return
+        telemetry = started
+        // Every call through the SDK's HTTP client, the management operations' included, ends here.
+        http.setRequestObserver { request, response -> started.api(request, response) }
+    }
+
+    /**
+     * The bases of the management collections the app moved off `baseUrl`, so their calls are watched as the
+     * SDK's own: `https://admin.example.com/api` for `applications = "https://admin.example.com/api/applications"`.
+     */
+    private fun managementBases(endpoints: ThunderIDEndpoints): List<String> =
+        listOfNotNull(
+            endpoints.agents,
+            endpoints.applications,
+            endpoints.users,
+            endpoints.groups,
+            endpoints.roles,
+            endpoints.agentTypes,
+            endpoints.userTypes,
+            endpoints.organizationUnits,
+            endpoints.resourceServers,
+            endpoints.connections,
+            endpoints.flows,
+            endpoints.notificationTemplates,
+            endpoints.design,
+            endpoints.i18n,
+            endpoints.serverConfig,
+            endpoints.gateways,
+            endpoints.variables,
+            endpoints.secrets,
+            endpoints.configurationVersions,
+            endpoints.import,
+            endpoints.export,
+            endpoints.credentialConfigurations,
+            endpoints.presentationDefinitions,
+            endpoints.clientRegistrations,
+            endpoints.projects,
+            endpoints.authorizationDetailTypes,
+        ).map { it.trimEnd('/').substringBeforeLast('/') }.distinct()
+
+    /** The claims an event is attributed to: the session's ID token, or the user a backend reported. */
+    private fun telemetryClaims(store: TokenStore): Map<String, Any?>? {
+        if (backend != null) return currentUser?.claims
+        return store.idToken()?.let { jwtClaims(it) } ?: store.accessToken()?.let { jwtClaims(it) }
     }
 
     fun decodeJwtToken(token: String): Map<String, Any?> {
@@ -1323,7 +1490,13 @@ class ThunderIDClient internal constructor(
         }
         val tokens = TokenResponse(accessToken = assertion, tokenType = "Bearer")
         // A flow bounded to an organization unit replaces the whole session, as a switch must.
-        if (boundedFlowInProgress) tokenStore!!.replace(tokens) else tokenStore!!.save(tokens)
+        if (boundedFlowInProgress) {
+            tokenStore!!.replace(tokens)
+        } else {
+            tokenStore!!.save(tokens)
+            // The session has no ID token, so one kept from an earlier session no longer describes its user.
+            tokenStore!!.removeIdToken()
+        }
         boundedFlowInProgress = false
         try {
             val claims = decodeJwtToken(assertion)

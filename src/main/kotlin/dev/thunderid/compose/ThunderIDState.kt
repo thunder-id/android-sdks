@@ -75,6 +75,18 @@ class ThunderIDState(
         currentProjectState = project
     }
 
+    /** Reports an event the app names. See [ThunderIDClient.track]. */
+    fun track(
+        name: String,
+        data: Map<String, String> = emptyMap(),
+    ) = client.track(name, data)
+
+    /** Reports a screen view from its route pattern. See [ThunderIDClient.trackPageView]. */
+    fun trackPageView(pattern: String) = client.trackPageView(pattern)
+
+    /** Reports a link that leaves the app. See [ThunderIDClient.trackLink]. */
+    fun trackLink(url: String) = client.trackLink(url)
+
     /** Coordinates refetching between the management queries and mutations under this state. */
     val invalidator = ResourceInvalidator()
 

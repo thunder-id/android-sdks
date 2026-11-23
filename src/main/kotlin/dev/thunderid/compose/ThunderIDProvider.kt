@@ -5,11 +5,14 @@ package dev.thunderid.compose
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDConfig
@@ -47,7 +50,22 @@ fun ThunderIDProvider(
         }
     }
 
-    CompositionLocalProvider(LocalThunderID provides state) {
+    // Telemetry waiting to be sent goes when the app moves to the background.
+    DisposableEffect(lifecycleOwner, client) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP) client.flushTelemetry()
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Links opened through the URI handler, the SDK components' included, are reported as `link.open`.
+    val parentUriHandler = LocalUriHandler.current
+    val uriHandler =
+        remember(client, parentUriHandler) { TelemetryUriHandler.reportingTo(client, parentUriHandler) }
+
+    CompositionLocalProvider(LocalThunderID provides state, LocalUriHandler provides uriHandler) {
         content()
     }
 }

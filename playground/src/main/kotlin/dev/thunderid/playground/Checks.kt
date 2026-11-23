@@ -21,6 +21,10 @@ import dev.thunderid.android.EmbeddedFlowResponse
 import dev.thunderid.android.EmbeddedSignInPayload
 import dev.thunderid.android.FlowComponent
 import dev.thunderid.android.FlowStatus
+import dev.thunderid.android.InMemoryStorageAdapter
+import dev.thunderid.android.TelemetryConfig
+import dev.thunderid.android.ThunderIDClient
+import dev.thunderid.android.ThunderIDConfig
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
 import dev.thunderid.android.api.account.OrganizationUnitScope
@@ -147,6 +151,12 @@ val CheckDefs =
             "Management",
             "Projects and authorization details types",
             "client.projects · authorizationDetailTypes · getSupportedAuthorizationDetailsTypes()",
+        ),
+        CheckDef(
+            "telemetry",
+            "Session",
+            "Usage telemetry",
+            "telemetry · track() · trackPageView() · trackLink() · flushTelemetry()",
         ),
         CheckDef("theme", "UI", "Theming and dark mode", "MaterialTheme · Material 3"),
         CheckDef("i18n", "UI", "Translations", "ThunderIDI18n"),
@@ -304,6 +314,7 @@ class ChecksController(
             "operations" -> management(state) { operations(state) }
             "sharing" -> management(state) { sharing(state) }
             "projects" -> management(state) { projects(state) }
+            "telemetry" -> telemetry(state)
             "theme" -> theme(scheme)
             "i18n" -> translations()
             else -> fail("Unknown check")
@@ -585,6 +596,41 @@ class ChecksController(
                 ?: return fail("/users/me reports no verifiedAttributes; the server does not support verification")
         val statuses = verifiable.joinToString(", ") { "$it ${if (it in verified) "verified" else "unverified"}" }
         return pass("$statuses. Run the VerifyAttribute story to verify one.")
+    }
+
+    /**
+     * Telemetry never holds up the app: with an endpoint that refuses every connection, initialization
+     * succeeds and the operations return at once. A non-HTTPS endpoint leaves telemetry off without failing.
+     */
+    private suspend fun telemetry(state: ThunderIDState): CheckResult {
+        val baseUrl = PlaygroundSettings.baseUrl.ifBlank { "https://localhost:8090" }
+
+        suspend fun client(endpoint: String) =
+            ThunderIDClient().apply {
+                val config = ThunderIDConfig(baseUrl = baseUrl, telemetry = TelemetryConfig(endpoint = endpoint))
+                initialize(config, InMemoryStorageAdapter())
+            }
+        val unreachable = client("https://127.0.0.1:9/v1/logs")
+        val started = System.nanoTime()
+        repeat(TELEMETRY_EVENTS) { unreachable.track("playground.check-run", mapOf("check" to "telemetry")) }
+        unreachable.trackPageView("/checks")
+        unreachable.trackLink("https://docs.example.com/start?from=playground")
+        unreachable.flushTelemetry()
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        client("http://127.0.0.1:9/v1/logs").track("playground.check-run")
+        val configured =
+            runCatching {
+                state.client
+                    .getConfiguration()
+                    .telemetry
+                    ?.endpoint
+            }.getOrNull()
+        val own = if (configured == null) "this app has no telemetry endpoint" else "this app reports to $configured"
+        return if (elapsedMs < TELEMETRY_BUDGET_MS) {
+            pass("${TELEMETRY_EVENTS + 2} events queued and flushed in $elapsedMs ms against a dead endpoint; $own")
+        } else {
+            fail("Telemetry took $elapsedMs ms against a dead endpoint")
+        }
     }
 
     private fun theme(scheme: ColorScheme): CheckResult {
@@ -997,7 +1043,10 @@ class ChecksController(
 
     private companion object {
         // Checks that do not need an initialized SDK.
-        val OFFLINE_CHECKS = setOf("biometric", "deeplink", "storage", "permissions", "theme", "i18n")
+        val OFFLINE_CHECKS = setOf("biometric", "deeplink", "storage", "permissions", "telemetry", "theme", "i18n")
+
+        const val TELEMETRY_EVENTS = 25
+        const val TELEMETRY_BUDGET_MS = 200L
 
         // Development only: the local ThunderID server uses a self-signed certificate.
         fun trustAll(connection: HttpsURLConnection) {

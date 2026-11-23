@@ -15,11 +15,17 @@ data class ThunderIDHttpRequest(
 
 /**
  * The response a [ThunderIDFetcher] returns. The SDK maps non-2xx statuses to an [IAMException].
+ *
+ * @property headers The response headers. A fetcher may leave them out; the SDK reads only the
+ * `X-Telemetry-Event` header, without regard to case, to name the call when telemetry is on.
  */
-data class ThunderIDHttpResponse(
-    val statusCode: Int,
-    val body: String,
-)
+data class ThunderIDHttpResponse
+    @JvmOverloads
+    constructor(
+        val statusCode: Int,
+        val body: String,
+        val headers: Map<String, String> = emptyMap(),
+    )
 
 /**
  * Performs an HTTP request. Supply one to route the management operations through your own transport.

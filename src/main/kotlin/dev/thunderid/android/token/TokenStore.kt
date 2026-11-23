@@ -73,6 +73,8 @@ internal class TokenStore(
 
     fun removeDeviceSecret() = storage.delete(StoreKey.DEVICE_SECRET)
 
+    fun removeIdToken() = storage.delete(StoreKey.ID_TOKEN)
+
     /**
      * Merges the sessions a flow step started into the kept ones by flow identifier, then drops the ones it
      * [cleared]. Does nothing when the step names neither.

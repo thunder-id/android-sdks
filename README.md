@@ -95,6 +95,63 @@ ThunderIDConfig(
 )
 ```
 
+## Usage telemetry
+
+Set `telemetry` with an HTTPS `endpoint` and the SDK reports, as codes only, the creates, updates,
+deletes and other changes made through its HTTP client (the management operations included), its own
+sign-in and sign-out, links opened through `LocalUriHandler` under `ThunderIDProvider`, and the screens
+you mark. Events are batched and sent in the background, a failed send is dropped, and nothing is sent
+until `consent` returns `true` when it is set. The default format is OpenTelemetry log records over
+OTLP/HTTP JSON.
+
+```kotlin
+ThunderIDConfig(
+    baseUrl = "https://id.example.com",
+    telemetry =
+        TelemetryConfig(
+            endpoint = "https://collector.example.com/v1/logs",
+            prefix = "acme",
+            context = mapOf("service.name" to "acme-console"),
+            consent = { analyticsAllowed },
+        ),
+)
+
+@Composable
+fun ApplicationScreen() {
+    TelemetryScreen("/applications/{id}") // reports acme.application.detail-view
+    val openExternalLink = rememberOpenExternalLink()
+    // Opens the link and reports acme.link.open with its host and first path word.
+    TextButton(onClick = { openExternalLink("https://docs.example.com/start") }) { Text("Docs") }
+}
+```
+
+API events are named by generic rules from the method and path alone (`POST /groups` is `group.create`,
+`POST /groups/{id}/members/add` is `group.member-add`), or by the name the API gives in its
+`X-Telemetry-Event` response header (`none` leaves the call out). A path of plain words only is named
+from them (`POST /import` is `api.import`), and any other change is `api.call` with a path template that
+keeps no value from the path. Reads and the SDK's own sign-in and protocol calls are never reported, and
+no request or response body is sent. Anything specific to your API comes from `apiEvents`:
+
+- `names` renames an event, keyed by its name or by a method and path such as `POST /import/*`, optionally
+  only when the request body sets a field: `"POST /gateways/*/apply ?origin" to "deployment.promote"`.
+- `exclude` leaves out URLs, paths below the API such as `/oauth2/**`, or event names; excluding a name
+  also leaves out its `-failed` form.
+- `parentActions` reports a sub-collection as an action on its parent, such as
+  `"sharing-policies" to TelemetryParentActions(create = "share")`.
+- `skipWhen` lists request body fields, such as `dryRun`, that mean a call changes nothing.
+- `kinds` lists top-level collections, such as `connections`, whose next path word is a kind
+  (`POST /connections/google` is `connection.create` with `kind: google`).
+- `addressWords` lists words, such as `tree`, after which a path is an address
+  (`PUT /organization-units/tree/a/b` is `organization-unit.update`).
+- `actions` lists words, such as `suspend`, that end a POST to a sub-collection as an action on the
+  parent, besides `add`, `create`, `delete`, `remove` and `update`.
+
+`client.track(name, data)` reports anything else. The endpoint gets the app's access token only when it
+shares the origin of `baseUrl`; set `token` to send a fixed token instead, or `TelemetryToken.None`. In
+backend mode the backend keeps the tokens, so the endpoint never gets an access token, even on the origin
+of `baseUrl`: a collector that requires authentication needs a fixed `token` there, such as
+`token = TelemetryToken.Value("...")`.
+
 ## Playground
 
 The [`playground`](playground) directory contains a Jetpack Compose app that builds this SDK from source and exercises

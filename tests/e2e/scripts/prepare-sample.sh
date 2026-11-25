@@ -19,9 +19,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 SAMPLES_DIR="$SCRIPT_DIR/../.samples"
-SAMPLE_PATH="quickstarts/android"
+# The quickstart's path in the samples repository. A samples checkout from before the quickstarts
+# were renamed has it at the bare platform name, so an older THUNDERID_SAMPLES_REF still works.
+SAMPLE_PATHS=("quickstarts/quickstart-android" "quickstarts/android")
 SAMPLES_REPO="${THUNDERID_SAMPLES_REPO:-https://github.com/thunder-id/samples.git}"
 SAMPLES_REF="${THUNDERID_SAMPLES_REF:-main}"
+
+# Prints the first of SAMPLE_PATHS that exists under the given samples checkout.
+find_sample() {
+    local path
+    for path in "${SAMPLE_PATHS[@]}"; do
+        if [ -d "$1/$path" ]; then echo "$path"; return 0; fi
+    done
+    echo "ERROR: none of ${SAMPLE_PATHS[*]} exists in $2." >&2
+    return 1
+}
 
 # The published artifact the sample depends on, substituted with this checkout's root project.
 SDK_MODULE="com.github.thunder-id:android-sdks"
@@ -30,28 +42,22 @@ rm -rf "$SAMPLES_DIR"
 mkdir -p "$SAMPLES_DIR"
 
 if [ -n "${THUNDERID_SAMPLES_DIR:-}" ]; then
+    SAMPLE_PATH="$(find_sample "$THUNDERID_SAMPLES_DIR" "$THUNDERID_SAMPLES_DIR")"
     echo "==> Copying $SAMPLE_PATH from $THUNDERID_SAMPLES_DIR" >&2
-    [ -d "$THUNDERID_SAMPLES_DIR/$SAMPLE_PATH" ] || {
-        echo "ERROR: $THUNDERID_SAMPLES_DIR/$SAMPLE_PATH does not exist." >&2
-        exit 1
-    }
     mkdir -p "$SAMPLES_DIR/$(dirname "$SAMPLE_PATH")"
     cp -R "$THUNDERID_SAMPLES_DIR/$SAMPLE_PATH" "$SAMPLES_DIR/$SAMPLE_PATH"
     # Drop local build state and configuration a working checkout may carry.
     rm -rf "$SAMPLES_DIR/$SAMPLE_PATH"/{build,.gradle,local.properties,config.properties}
 else
-    echo "==> Fetching $SAMPLE_PATH from $SAMPLES_REPO at $SAMPLES_REF" >&2
+    echo "==> Fetching the quickstart from $SAMPLES_REPO at $SAMPLES_REF" >&2
     # init + fetch rather than `clone --branch`, so a commit SHA works as the ref too.
     git -C "$SAMPLES_DIR" init -q
     git -C "$SAMPLES_DIR" remote add origin "$SAMPLES_REPO"
     git -C "$SAMPLES_DIR" fetch -q --depth 1 origin "$SAMPLES_REF"
     git -C "$SAMPLES_DIR" checkout -q FETCH_HEAD
+    SAMPLE_PATH="$(find_sample "$SAMPLES_DIR" "$SAMPLES_REPO at $SAMPLES_REF")"
 fi
 
-[ -d "$SAMPLES_DIR/$SAMPLE_PATH" ] || {
-    echo "ERROR: $SAMPLE_PATH does not exist in $SAMPLES_REPO at $SAMPLES_REF." >&2
-    exit 1
-}
 SAMPLE_DIR="$(cd "$SAMPLES_DIR/$SAMPLE_PATH" && pwd)"
 
 grep -qF "\"$SDK_MODULE:" "$SAMPLE_DIR/build.gradle.kts" || {

@@ -4,7 +4,7 @@ Android SDK for ThunderID. Provides authentication and user management for nativ
 
 - [Quickstart](https://thunderid.dev/docs/next/getting-started/connect-your-application/android/)
 - [API reference](https://thunderid.dev/docs/next/sdks/android/overview/)
-- [Sample app](https://github.com/thunder-id/samples/tree/main/quickstarts/android)
+- [Sample app](https://github.com/thunder-id/samples/tree/main/quickstarts/quickstart-android)
 
 ## Installation
 

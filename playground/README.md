@@ -3,7 +3,7 @@
 A Jetpack Compose app for exercising every capability of the ThunderID Android SDK from source.
 It builds the SDK in this repository through `includeBuild("..")`, so changes to `src/` show up the
 next time you run it. It is a development tool, not a sample: for a minimal integration, see the
-[Android Quickstart](https://github.com/thunder-id/samples/tree/main/quickstarts/android).
+[Android Quickstart](https://github.com/thunder-id/samples/tree/main/quickstarts/quickstart-android).
 
 ## What it shows
 

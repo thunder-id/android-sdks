@@ -168,10 +168,14 @@ jobs:
           distribution: 'temurin'
 
       # The sample lives in thunder-id/samples; fetch it and build it against this checkout.
+      # The script prints the prepared sample's directory, wherever the samples repository keeps it.
       - name: 📥 Fetch Quickstart Sample
+        id: sample
         env:
           THUNDERID_SAMPLES_REF: ${{ needs.samples-ref.outputs.ref }}
-        run: tests/e2e/scripts/prepare-sample.sh
+        run: |
+          dir="$(tests/e2e/scripts/prepare-sample.sh)"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: 🗄️ Cache Gradle Packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -179,12 +183,12 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-sample-${{ hashFiles('*.gradle.kts', 'tests/e2e/.samples/quickstarts/android/**/*.gradle.kts', 'tests/e2e/.samples/quickstarts/android/**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-sample-${{ hashFiles('*.gradle.kts', 'tests/e2e/.samples/quickstarts/**/*.gradle.kts', 'tests/e2e/.samples/quickstarts/**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-sample-
 
       - name: 🔨 Build Quickstart Sample
-        working-directory: tests/e2e/.samples/quickstarts/android
+        working-directory: ${{ steps.sample.outputs.dir }}
         run: ./gradlew build -x test
 
   build-playground:

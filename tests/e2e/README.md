@@ -5,7 +5,7 @@ ThunderID server on an Android emulator. The flows live in [`flows/`](./flows); 
 scripts alongside them get a server into the right state to run against.
 
 The sample itself lives in the samples repository at
-[`quickstarts/android`](https://github.com/thunder-id/samples/tree/main/quickstarts/android).
+[`quickstarts/quickstart-android`](https://github.com/thunder-id/samples/tree/main/quickstarts/quickstart-android).
 [`scripts/prepare-sample.sh`](./scripts/prepare-sample.sh) (or `prepare-sample.ps1`) fetches it
 into `.samples/` and adds an `includeBuild` to its `settings.gradle.kts` that substitutes this SDK
 checkout for the published `com.github.thunder-id:android-sdks` dependency, so the suite always
@@ -52,7 +52,7 @@ restarted, and provisioning re-applies cleanly over an existing application and 
 | Test user | `e2e_mobile_user` / `TestPassword@123` |
 
 The application is declared in
-[`quickstarts/android/thunderid-config/thunderid-config.yaml`](https://github.com/thunder-id/samples/blob/main/quickstarts/android/thunderid-config/thunderid-config.yaml)
+[`quickstarts/quickstart-android/thunderid-config/thunderid-config.yaml`](https://github.com/thunder-id/samples/blob/main/quickstarts/quickstart-android/thunderid-config/thunderid-config.yaml)
 in the samples repository, alongside the sample it configures. The sign-up flow
 registers an additional throwaway user per run, named `e2e_signup_<timestamp>`.
 

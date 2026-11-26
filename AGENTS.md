@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Kotlin Android library providing the ThunderID authentication SDK (`dev.thunderid.android`) and a Jetpack Compose component library (`dev.thunderid.compose`). The Quickstart demo app lives in the samples repository at [`quickstarts/android`](https://github.com/thunder-id/samples/tree/main/quickstarts/android). The `playground/` directory holds a development app that exercises every SDK capability against the SDK built from source.
+Kotlin Android library providing the ThunderID authentication SDK (`dev.thunderid.android`) and a Jetpack Compose component library (`dev.thunderid.compose`). The Quickstart demo app lives in the samples repository at [`quickstarts/quickstart-android`](https://github.com/thunder-id/samples/tree/main/quickstarts/quickstart-android). The `playground/` directory holds a development app that exercises every SDK capability against the SDK built from source.
 
 ## SDK development specification
 
@@ -114,7 +114,7 @@ settings.gradle.kts     Project settings
 
 - **Layer 1–2** (`dev.thunderid.android`): platform SDK — HTTP, token management, auth flows, PKCE, storage.
 - **Layer 3** (`dev.thunderid.compose`): Compose UI wrappers around the platform SDK.
-- **Layer 4** ([`quickstarts/android`](https://github.com/thunder-id/samples/tree/main/quickstarts/android) in thunder-id/samples): standalone demo app that depends on the published SDK from JitPack. The E2E suite and the PR builder fetch it with `tests/e2e/scripts/prepare-sample.sh`, which points it at the local checkout via `includeBuild`.
+- **Layer 4** ([`quickstarts/quickstart-android`](https://github.com/thunder-id/samples/tree/main/quickstarts/quickstart-android) in thunder-id/samples): standalone demo app that depends on the published SDK from JitPack. The E2E suite and the PR builder fetch it with `tests/e2e/scripts/prepare-sample.sh`, which points it at the local checkout via `includeBuild`.
 
 Every Compose component ships in two variants:
 - **Styled** — opinionated Material 3 defaults (e.g. `SignInButton`).
@@ -147,7 +147,7 @@ A project is not an organization unit: it has a root organization unit of its ow
 The quickstarts and integration samples live in [thunder-id/samples](https://github.com/thunder-id/samples), and each one pins a released version of this SDK. A change here therefore can't break a sample until the sample bumps its version, which is exactly when a break would surface for a real app. Before raising a pull request, check every sample that uses this SDK:
 
 - **A sample stops compiling or behaving the same** (a renamed type or package, a changed signature, a moved default): raise a samples pull request that bumps the SDK version and fixes the sample. Keep it as a draft until the SDK release it needs is out.
-- **The change adds something a sample exists to show** (a self-care capability for `self-care/account`, a management component or operation for `management/admin`, a new sign-in option for the quickstarts): update that sample in the same samples pull request, so it demonstrates the new capability rather than working around its absence.
+- **The change adds something a sample exists to show** (a self-service capability for `self-service/myaccount-react`, a management component or operation for `management/admin-react`, a new sign-in option for the quickstarts): update that sample in the same samples pull request, so it demonstrates the new capability rather than working around its absence.
 - Link the samples pull request from this pull request's **Related PRs**, or say why no sample is affected.
 - When the change breaks the quickstart, add a `Samples-Ref: refs/pull/<number>/head` line to this pull request's body. The PR builder's sample build and E2E suite then take the quickstart from that samples pull request instead of `main`. Edit the body, then re-run the jobs.
 

@@ -116,6 +116,33 @@ data class AgentLoginConsentConfig(
     val validityPeriod: Int? = null,
 )
 
+/** What an agent owner's [AgentOwner.id] holds. [value] is the wire value. */
+enum class AgentOwnerIdType(
+    val value: String,
+) {
+    @SerializedName("uuid")
+    UUID("uuid"),
+
+    @SerializedName("email")
+    EMAIL("email"),
+
+    @SerializedName("mobile")
+    MOBILE("mobile"),
+}
+
+/**
+ * The person accountable for an agent. A local owner is an entity of this deployment, named by its entity ID.
+ * An owner managed in another identity system is not looked up.
+ *
+ * @property idType What [id] holds. The server defaults it to [AgentOwnerIdType.UUID]. A local owner must be a UUID.
+ * @property isLocal Whether the owner is an entity of this deployment. The server treats `null` as `true`.
+ */
+data class AgentOwner(
+    val id: String,
+    val idType: AgentOwnerIdType? = null,
+    val isLocal: Boolean? = null,
+)
+
 /**
  * An agent registered in ThunderID. [authFlowId], [registrationFlowId] and [isRegistrationFlowEnabled]
  * are populated only when the agent has an inbound client.
@@ -129,7 +156,7 @@ data class Agent(
     val ouHandle: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
-    val owner: String? = null,
+    val owner: AgentOwner? = null,
     val clientId: String? = null,
     val attributes: Map<String, Any?>? = null,
     val allowedUserTypes: List<String>? = null,
@@ -181,7 +208,7 @@ data class CreateAgentRequest(
     val type: String,
     val description: String? = null,
     val logoUrl: String? = null,
-    val owner: String? = null,
+    val owner: AgentOwner? = null,
     val attributes: Map<String, Any?>? = null,
     val inboundAuthConfig: List<AgentInboundAuthConfig>? = null,
     val projectId: String? = null,
@@ -193,7 +220,7 @@ data class UpdateAgentRequest(
     val type: String? = null,
     val description: String? = null,
     val logoUrl: String? = null,
-    val owner: String? = null,
+    val owner: AgentOwner? = null,
     val attributes: Map<String, Any?>? = null,
     val allowedUserTypes: List<String>? = null,
     val allowedAgentTypes: List<String>? = null,

@@ -1040,8 +1040,8 @@ internal suspend fun handleSignInResponse(
  * Runs the native WebAuthn ceremony ([PasskeyClient.authenticate] for a `passkeyChallenge`,
  * [PasskeyClient.register] for `passkeyCreationOptions`) and resubmits the flow with the
  * resulting flat inputs, without requiring another user tap. On ceremony failure (user
- * cancellation, no credential, etc.) the error is surfaced and the flow is left as-is so the
- * user can retry.
+ * cancellation, no credential, etc.) the flow is told through a `passkeyError` input, and the
+ * step it returns is shown with its error so the user can try again.
  */
 private suspend fun performPasskeyCeremony(
     flowId: String,
@@ -1056,13 +1056,32 @@ private suspend fun performPasskeyCeremony(
     onComplete: (() -> Unit)?,
     onError: ((String) -> Unit)?,
 ) {
-    try {
-        val inputs =
+    val inputs =
+        try {
             if (passkeyChallenge != null) {
                 passkeyClient.authenticate(context, passkeyChallenge)
             } else {
                 passkeyClient.register(context, passkeyCreationOptions!!)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("SignInFlow", "Passkey ceremony failed (${diagnosticLabel(e)})")
+            reportPasskeyFailure(
+                e,
+                flowId,
+                challengeToken,
+                signInState,
+                thunderState,
+                request,
+                context,
+                passkeyClient,
+                onComplete,
+                onError,
+            )
+            return
+        }
+    try {
         val nextPayload = EmbeddedSignInPayload(flowId = flowId, inputs = inputs, challengeToken = challengeToken)
         val nextResponse = thunderState.client.signIn(payload = nextPayload, request = request)
         handleSignInResponse(
@@ -1080,10 +1099,64 @@ private suspend fun performPasskeyCeremony(
         throw e
     } catch (e: Exception) {
         android.util.Log.e("SignInFlow", "Passkey ceremony failed (${diagnosticLabel(e)})")
-        val msg = e.message ?: "Passkey authentication failed"
-        signInState.error = msg
-        onError?.invoke(msg)
+        surfacePasskeyError(e, signInState, onError)
     }
+}
+
+/** Submits a `passkeyError` input in place of the credential, and shows the step the flow returns. */
+private suspend fun reportPasskeyFailure(
+    failure: Exception,
+    flowId: String,
+    challengeToken: String?,
+    signInState: SignInState,
+    thunderState: ThunderIDState,
+    request: EmbeddedFlowRequestConfig,
+    context: Context,
+    passkeyClient: PasskeyClient,
+    onComplete: (() -> Unit)?,
+    onError: ((String) -> Unit)?,
+) {
+    try {
+        val errorCode = (failure as? IAMException)?.code ?: ThunderIDErrorCode.PASSKEY_FAILED
+        val payload =
+            EmbeddedSignInPayload(
+                flowId = flowId,
+                inputs = mapOf("passkeyError" to errorCode.value),
+                challengeToken = challengeToken,
+            )
+        val response = thunderState.client.signIn(payload = payload, request = request)
+        handleSignInResponse(
+            response,
+            null,
+            signInState,
+            thunderState,
+            request,
+            context,
+            passkeyClient,
+            onComplete,
+            onError,
+        )
+        val stepError = response.error
+        if (stepError != null && response.flowStatus != FlowStatus.ERROR && response.flowStatus != FlowStatus.COMPLETE) {
+            signInState.error =
+                signInState.templateResolver?.translate(stepError.message) ?: stepError.message?.defaultValue
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.e("SignInFlow", "Passkey failure report failed (${diagnosticLabel(e)})")
+        surfacePasskeyError(failure, signInState, onError)
+    }
+}
+
+private fun surfacePasskeyError(
+    e: Exception,
+    signInState: SignInState,
+    onError: ((String) -> Unit)?,
+) {
+    val msg = e.message ?: "Passkey authentication failed"
+    signInState.error = msg
+    onError?.invoke(msg)
 }
 
 /**

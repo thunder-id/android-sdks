@@ -151,6 +151,22 @@ The quickstarts and integration samples live in [thunder-id/samples](https://git
 - Link the samples pull request from this pull request's **Related PRs**, or say why no sample is affected.
 - When the change breaks the quickstart, add a `Samples-Ref: refs/pull/<number>/head` line to this pull request's body. The PR builder's sample build and E2E suite then take the quickstart from that samples pull request instead of `main`. Edit the body, then re-run the jobs.
 
+## Pull request labels
+
+Every pull request carries one label that says what kind of change it is. The `🔎 PR Check / 🏷️ Check PR Labels` check fails without one, and the release notes and the CHANGELOG.md are grouped by it (see `.github/release.yml`). Pick the label from what someone using the SDK would notice:
+
+| Label | Use it for | Release notes section |
+|---|---|---|
+| `Type/New Feature` | Something that wasn't there before: an operation, component, configuration key or option | 🚀 Features |
+| `Type/Improvement` | Something that exists, made better: behaviour, performance, error messages, accessibility, a dependency bump users notice | ✨ Improvements |
+| `Type/Bug` | A fix for behaviour that was wrong | 🐛 Bug Fixes |
+| `skip-changelog` | A change users never see: CI and release tooling, tests, the playground, agent instructions, and docs that live only in this repository | Left out |
+
+- When a pull request is a breaking change, also add `breaking change`, and fill in the pull request's Breaking Changes section. It is listed under ⚠️ Breaking Changes.
+- When a change mixes kinds, pick the label that matters most to someone upgrading.
+- Add the label when raising the pull request (`gh pr create --label "Type/Bug"`), or later with `gh pr edit <number> --add-label "Type/Bug"`.
+- If the check ran before the label was added, re-running it fails again, because it replays the original event. Remove and re-add the label to start a fresh run.
+
 ## Code style
 
 - Kotlin, target JVM 17; minSdk 26 for the SDK, minSdk 24 for the sample.

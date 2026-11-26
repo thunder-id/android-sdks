@@ -95,6 +95,11 @@ fun BaseGroupDetails(
 /**
  * Shows one group, loaded through the group management operations, with its members.
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`group` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param editable Lets users and agents be added to the group and members be removed, once the group is loaded.
  *   Off by default.
  * @param deletable Shows a delete action, which asks for confirmation. Off by default.
@@ -120,6 +125,7 @@ fun GroupDetails(
     val group = rememberGetGroup(groupId)
     val deletion = rememberDeleteGroup(administrationMode = administrationMode)
     val loaded = group.data
+    val access = rememberCapabilities().recordAccess("group", isReadOnly = null, isOwnedByOU = null)
     BaseGroupDetails(
         group = loaded,
         modifier = modifier,
@@ -129,7 +135,7 @@ fun GroupDetails(
         isLoading = group.isLoading,
         isDeleting = deletion.isLoading,
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 { scope.launch { deletion.mutate(groupId)?.let { onDeleted?.invoke() } } }
             } else {
                 null
@@ -138,7 +144,7 @@ fun GroupDetails(
         members = {
             GroupMembers(
                 groupId = groupId,
-                editable = editable && loaded != null,
+                editable = editable && !access.readOnly && loaded != null,
                 administrationMode = administrationMode,
                 ouId = loaded?.ouId,
             )

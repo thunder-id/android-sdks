@@ -291,6 +291,9 @@ private fun RolePermissionPicker(
 /**
  * Shows the permissions a role grants, loaded through the role management operations.
  *
+ * Editing is offered only when turned on here and the server reports the signed-in user may update the
+ * resource. That decides what is offered, not what is allowed: the server still authorizes every request.
+ *
  * @param editable Lets permissions be granted, picked from the resource servers and their actions, and revoked,
  *   which asks for confirmation. Changes are saved with the role update operation. Never offered for a read-only
  *   role. Off by default.
@@ -312,11 +315,12 @@ fun RolePermissions(
     description: String? = null,
     content: (@Composable (RolePermissionsState) -> Unit)? = null,
 ) {
+    val offersEditing = editable && rememberCapabilities().can("role", "update")
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val role = rememberGetRole(roleId)
     val loaded = role.data
-    val canEdit = editable && loaded != null && loaded.isReadOnly != true
+    val canEdit = offersEditing && loaded != null && loaded.isReadOnly != true
     val candidates =
         rememberResourceQuery(listOf("resource-servers", "permission-candidates"), enabled = canEdit, ::loadPermissionCandidates)
     val update =

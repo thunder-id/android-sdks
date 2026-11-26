@@ -117,6 +117,9 @@ fun BaseAgentCreate(
  * project's root organization unit, or, with no project chosen, to the signed-in user's organization unit. Offers
  * the agent types the server lists.
  *
+ * It renders only for a user the server reports may create one (`agent` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param owner The identifier of the agent's owner, if any.
  * @param onCreated Receives the agent as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseAgentCreate].
@@ -132,6 +135,7 @@ fun AgentCreate(
     description: String? = null,
     content: (@Composable (AgentCreateFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("agent", "create")) return
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val placement = rememberCreatePlacement(ouId)

@@ -3,6 +3,7 @@
 
 package dev.thunderid.android
 
+import com.google.gson.JsonElement
 import dev.thunderid.android.api.account.AccessibleOrganizationUnits
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsOptions
 import dev.thunderid.android.api.account.AccessibleOrganizationUnitsResponse
@@ -26,6 +27,7 @@ import dev.thunderid.android.api.management.AgentTypesClient
 import dev.thunderid.android.api.management.AgentsClient
 import dev.thunderid.android.api.management.ApplicationsClient
 import dev.thunderid.android.api.management.AuthorizationDetailTypesClient
+import dev.thunderid.android.api.management.Capabilities
 import dev.thunderid.android.api.management.ClientRegistrationsClient
 import dev.thunderid.android.api.management.ConfigurationClient
 import dev.thunderid.android.api.management.ConfigurationVersionsClient
@@ -49,6 +51,7 @@ import dev.thunderid.android.api.management.UserTypesClient
 import dev.thunderid.android.api.management.UsersClient
 import dev.thunderid.android.api.management.VariablesClient
 import dev.thunderid.android.api.management.getTokenPermissions
+import dev.thunderid.android.api.management.parseCapabilities
 import dev.thunderid.android.backend.BackendClient
 import dev.thunderid.android.backend.BackendSessionStore
 import dev.thunderid.android.backend.resolveBackendEndpoints
@@ -302,6 +305,21 @@ class ThunderIDClient internal constructor(
      */
     val administration: AdministrationClient
         get() = AdministrationClient(managementTransport("flows") { null })
+
+    /**
+     * Returns the management actions the signed-in user's access token allows, read from `GET /capabilities`
+     * at the `capabilities` endpoint override, or `{baseUrl}/capabilities`. [fetcher] takes precedence over
+     * `ThunderIDConfig.http.fetcher`. Throws an [IAMException] when they cannot be read, such as
+     * [ThunderIDErrorCode.FORBIDDEN] for a 403.
+     *
+     * Capabilities decide what to offer, not what is allowed: they are not an authorization decision. The server
+     * authorizes every management request, and the SDK never skips or blocks a request because of them.
+     */
+    suspend fun getCapabilities(fetcher: ThunderIDFetcher? = null): Capabilities {
+        val json: JsonElement? =
+            managementTransport("capabilities") { it.capabilities }.request<JsonElement>("GET", fetcher = fetcher)
+        return parseCapabilities(json)
+    }
 
     /**
      * Returns the permissions the signed-in user's access token carries, read from its `scopes` or `scope`

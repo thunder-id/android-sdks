@@ -95,6 +95,18 @@ ThunderIDConfig(
 )
 ```
 
+## Management operations
+
+The management operations (`client.users`, `client.applications`, `client.groups`, and the rest) are documented on
+`ThunderIDClient`, and their contract is the [SDK development specification](https://github.com/thunder-id/thunderid/blob/main/docs-internals/sdk-development/spec.md#management-operations).
+
+`client.getCapabilities()` reports which management actions the signed-in user's token allows, and under a
+`ThunderIDProvider` every component shares one read of them through `LocalThunderID.current.capabilities`. Wrap a
+screen in `CapabilityGuard(resource = "user", action = "create") { ... }` to offer it only to a user who may use it.
+The management components offer their actions only when you turn them on and the server reports the user may
+perform them. Capabilities decide what is offered, not what is allowed: they are not an authorization decision, the
+server authorizes every request, and the SDK never blocks a request because of them.
+
 ## Playground
 
 The [`playground`](playground) directory contains a Jetpack Compose app that builds this SDK from source and exercises

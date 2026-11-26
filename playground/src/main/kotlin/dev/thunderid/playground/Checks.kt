@@ -114,6 +114,7 @@ val CheckDefs =
         CheckDef("agentGroups", "Management", "Agent groups", "client.agents.listGroups()"),
         CheckDef("agentRoles", "Management", "Agent roles", "client.agents.listRoles()"),
         CheckDef("permissions", "Management", "Permission checks", "getGrantedPermissions() · hasPermission()"),
+        CheckDef("capabilities", "Management", "Capabilities", "client.getCapabilities() · can()"),
         CheckDef(
             "organizationUnits",
             "Management",
@@ -297,6 +298,7 @@ class ChecksController(
             "agentGroups" -> management(state) { agentGroups(state) }
             "agentRoles" -> management(state) { agentRoles(state) }
             "permissions" -> permissions(state)
+            "capabilities" -> management(state) { capabilities(state) }
             "organizationUnits" -> management(state) { organizationUnits(state) }
             "resourceServers" -> management(state) { resourceServers(state) }
             "lifecycle" -> management(state) { lifecycle(state) }
@@ -937,6 +939,13 @@ class ChecksController(
         val id = firstAgentId(state) ?: return idle("No agents. Create one with AgentCreate in Components.")
         val page = state.client.agents.listRoles(id, limit = 10)
         return pass("Agent $id has ${page.totalResults} roles${namesSuffix(page.roles)}")
+    }
+
+    private suspend fun capabilities(state: ThunderIDState): CheckResult {
+        val capabilities = state.client.getCapabilities()
+        val allowed = capabilities.resources.values.sumOf { actions -> actions.count { it.value } }
+        val scope = capabilities.scope.ouId?.let { "${capabilities.scope.type} $it" } ?: capabilities.scope.type
+        return pass("${capabilities.resources.size} resources, $allowed actions allowed ($scope); can(user)=${capabilities.can("user")}")
     }
 
     private suspend fun permissions(state: ThunderIDState): CheckResult {

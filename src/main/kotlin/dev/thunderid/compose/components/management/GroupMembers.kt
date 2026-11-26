@@ -129,6 +129,9 @@ fun BaseGroupMembers(
 /**
  * Shows the members of a group through the group management operations.
  *
+ * Editing is offered only when turned on here and the server reports the signed-in user may update the
+ * resource. That decides what is offered, not what is allowed: the server still authorizes every request.
+ *
  * @param editable Lets users and agents be added to the group and members be removed. Off by default.
  * @param administrationMode How a member is removed: [AdministrationMode.FLOW] runs the membership removal flow
  *   the server configures, which can revoke grants and end sessions first. Defaults to
@@ -147,20 +150,21 @@ fun GroupMembers(
     ouId: String? = null,
     content: (@Composable (GroupMembersState) -> Unit)? = null,
 ) {
+    val offersEditing = editable && rememberCapabilities().can("group", "update")
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val members = rememberGetGroupMembers(groupId, limit = 100)
     // A new filter is a new query key, which starts with no data, so no candidate from the previous unit is offered.
     val filter = groupMemberCandidateFilter(ouId)
-    val users = rememberGetUsers(limit = 100, filter = filter, enabled = editable)
-    val agents = rememberGetAgents(limit = 100, filter = filter, enabled = editable)
+    val users = rememberGetUsers(limit = 100, filter = filter, enabled = offersEditing)
+    val agents = rememberGetAgents(limit = 100, filter = filter, enabled = offersEditing)
     val add = rememberAddGroupMembers()
     val remove = rememberRemoveGroupMembers(administrationMode = administrationMode)
     BaseGroupMembers(
         members = members.data?.members.orEmpty(),
         modifier = modifier,
         candidates =
-            if (editable) {
+            if (offersEditing) {
                 mapOf(
                     GroupMemberType.USER to
                         users.data
@@ -180,13 +184,13 @@ fun GroupMembers(
         isLoading = members.isLoading,
         isMutating = add.isLoading || remove.isLoading,
         onAdd =
-            if (editable) {
+            if (offersEditing) {
                 { member -> scope.launch { add.mutate(GroupMembersInput(groupId, listOf(member))) } }
             } else {
                 null
             },
         onRemove =
-            if (editable) {
+            if (offersEditing) {
                 { member ->
                     scope.launch { remove.mutate(GroupMembersInput(groupId, listOf(GroupMemberInput(member.id, member.type)))) }
                 }

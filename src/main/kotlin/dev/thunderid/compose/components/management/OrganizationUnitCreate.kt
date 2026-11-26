@@ -169,6 +169,9 @@ fun BaseOrganizationUnitCreate(
  * The parent is [parentId] when given. Otherwise the form offers a picker of the root organization units,
  * starting on no parent, which creates a root unit.
  *
+ * It renders only for a user the server reports may create one (`ou` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param onCreated Receives the organization unit as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseOrganizationUnitCreate].
  */
@@ -182,6 +185,7 @@ fun OrganizationUnitCreate(
     description: String? = null,
     content: (@Composable (OrganizationUnitCreateFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("ou", "create")) return
     val state = LocalThunderID.current
     val scope = rememberCoroutineScope()
     val create = rememberCreateOrganizationUnit()

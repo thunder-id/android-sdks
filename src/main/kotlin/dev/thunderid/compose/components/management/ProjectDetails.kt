@@ -206,6 +206,11 @@ fun BaseProjectDetails(
 /**
  * Shows one project, loaded through the project management operations. Only the Control Plane serves projects.
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`project` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param editable Lets the display name and description be edited. Off by default.
  * @param deletable Shows a delete action, which asks for confirmation. The server refuses to delete the Default
  *   project and a project that still holds resources; the refusal is shown as a translated message. Off by default.
@@ -227,6 +232,7 @@ fun ProjectDetails(
     val i18n = state.i18n
     val scope = rememberCoroutineScope()
     val project = rememberGetProject(projectId)
+    val access = rememberCapabilities().recordAccess("project", isReadOnly = null, isOwnedByOU = null)
     val update = rememberUpdateProject()
     val deletion = rememberDeleteProject()
     BaseProjectDetails(
@@ -240,7 +246,7 @@ fun ProjectDetails(
         isDeleting = deletion.isLoading,
         isUpdating = update.isLoading,
         onUpdate =
-            if (editable) {
+            if (editable && !access.readOnly) {
                 { request ->
                     scope.launch {
                         update.mutate(projectId to request)?.let { updated ->
@@ -252,7 +258,7 @@ fun ProjectDetails(
                 null
             },
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 {
                     scope.launch {
                         deletion.mutate(projectId)?.let {

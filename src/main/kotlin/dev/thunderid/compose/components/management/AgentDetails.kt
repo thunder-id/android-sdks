@@ -8,13 +8,17 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import dev.thunderid.android.api.account.isPersonal
+import dev.thunderid.android.api.management.AccessStatusValue
 import dev.thunderid.android.api.management.AccountLifecycleAction
 import dev.thunderid.android.api.management.AccountLifecycleSubjectKind
 import dev.thunderid.android.api.management.Agent
 import dev.thunderid.android.api.management.AgentQueryKeys
 import dev.thunderid.android.api.management.MembershipGroup
+import dev.thunderid.android.api.management.SuspensionAppliedBy
 import dev.thunderid.android.api.management.resolveAgentName
 import dev.thunderid.compose.LocalThunderID
+import dev.thunderid.compose.i18n.ThunderIDI18n
 import dev.thunderid.compose.management.rememberAccountLifecycle
 import dev.thunderid.compose.management.rememberDeleteAgent
 import dev.thunderid.compose.management.rememberGetAgent
@@ -80,14 +84,7 @@ fun BaseAgentDetails(
         return
     }
 
-    val details =
-        listOfNotNull(
-            AdminDetailItem(i18n.resolve("admin.agents.details.type"), agent.type),
-            AdminDetailItem(i18n.resolve("admin.agents.details.owner"), agent.owner ?: i18n.resolve("admin.agents.details.no_owner")),
-            AdminDetailItem(i18n.resolve("admin.common.columns.organization_unit"), agent.ouHandle ?: agent.ouId),
-            agent.clientId?.let { AdminDetailItem(i18n.resolve("admin.agents.list.columns.client_id"), it, copyable = true) },
-            accessStatusLabel(i18n, agent.status?.value)?.let { AdminDetailItem(i18n.resolve("admin.common.columns.status"), it) },
-        )
+    val details = agentOverview(i18n, agent)
     AdminSection(
         block = "agent-details",
         modifier = modifier,
@@ -136,6 +133,57 @@ fun BaseAgentDetails(
 }
 
 /**
+ * The overview rows of [agent]: its type, owner, kind when it is a personal agent, organization unit, client,
+ * status, and who holds it suspended.
+ */
+internal fun agentOverview(
+    i18n: ThunderIDI18n,
+    agent: Agent,
+): List<AdminDetailItem> {
+    // A suspension that names no party is the organization's, as the lifecycle actions read it.
+    val suspendedBy =
+        agent.status
+            ?.takeIf { it.value == AccessStatusValue.SUSPENDED }
+            ?.let { status -> status.suspendedBy.ifEmpty { listOf(SuspensionAppliedBy.ORGANIZATION) } }
+            .orEmpty()
+    return listOfNotNull(
+        AdminDetailItem(i18n.resolve("admin.agents.details.type"), agent.type),
+        AdminDetailItem(i18n.resolve("admin.agents.details.owner"), agent.owner?.id ?: i18n.resolve("admin.agents.details.no_owner")),
+        if (agent.isPersonal) {
+            AdminDetailItem(i18n.resolve("admin.agents.details.kind"), i18n.resolve("admin.agents.kind.personal"))
+        } else {
+            null
+        },
+        AdminDetailItem(i18n.resolve("admin.common.columns.organization_unit"), agent.ouHandle ?: agent.ouId),
+        agent.clientId?.let { AdminDetailItem(i18n.resolve("admin.agents.list.columns.client_id"), it, copyable = true) },
+        accessStatusLabel(i18n, agent.status?.value)?.let { AdminDetailItem(i18n.resolve("admin.common.columns.status"), it) },
+        if (suspendedBy.isNotEmpty()) {
+            AdminDetailItem(
+                i18n.resolve("admin.agents.details.suspension.title"),
+                suspendedBy.joinToString(", ") { suspensionPartyLabel(i18n, it) },
+            )
+        } else {
+            null
+        },
+    )
+}
+
+/** The translated name of a party that suspended an agent, or the raw value when it is one this SDK does not know. */
+internal fun suspensionPartyLabel(
+    i18n: ThunderIDI18n,
+    party: String,
+): String =
+    when (party) {
+        SuspensionAppliedBy.OWNER, SuspensionAppliedBy.ORGANIZATION, SuspensionAppliedBy.CASCADE -> {
+            i18n.resolve("admin.agents.details.suspension.$party")
+        }
+
+        else -> {
+            party
+        }
+    }
+
+/**
  * Shows one agent, loaded through the agent management operations, with its groups and roles.
  *
  * @param deletable Shows a delete action, which asks for confirmation. Off by default.
@@ -169,6 +217,11 @@ fun AgentDetails(
             status = agent.data?.status?.value,
             enabled = lifecycleActions,
             invalidatedKeys = listOf(listOf(AgentQueryKeys.AGENT, agentId), listOf(AgentQueryKeys.AGENTS)),
+            appliedBy =
+                agent.data
+                    ?.status
+                    ?.details
+                    ?.appliedBy,
         )
     BaseAgentDetails(
         agent = agent.data,

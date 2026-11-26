@@ -4,7 +4,12 @@
 package dev.thunderid.compose.components.management
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -12,6 +17,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import dev.thunderid.android.api.account.isPersonal
 import dev.thunderid.android.api.management.BasicAgent
 import dev.thunderid.android.api.management.ManagementFilter
 import dev.thunderid.android.api.management.resolveAgentName
@@ -89,7 +97,12 @@ fun BaseAgentList(
             block = "agent-list",
             columns =
                 listOf(
-                    AdminColumn(i18n.resolve("admin.agents.list.columns.name")) { Text(resolveAgentName(it)) },
+                    AdminColumn(i18n.resolve("admin.agents.list.columns.name")) { agent ->
+                        Column {
+                            Text(resolveAgentName(agent))
+                            if (agent.isPersonal) AdminPersonalChip(i18n.resolve("admin.agents.kind.personal"))
+                        }
+                    },
                     AdminColumn(i18n.resolve("admin.agents.list.columns.type")) { Text(it.type) },
                     AdminColumn(i18n.resolve("admin.agents.list.columns.client_id")) { Text(it.clientId.orEmpty()) },
                     AdminColumn(i18n.resolve("admin.common.columns.organization_unit")) { Text(it.ouHandle ?: it.ouId) },
@@ -178,3 +191,16 @@ internal fun agentListSearchable(
     searchable: Boolean,
     projectId: String?,
 ): Boolean = searchable && projectId == null
+
+/** The chip that marks a personal agent in [BaseAgentList]. */
+@Composable
+private fun AdminPersonalChip(label: String) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.padding(top = 4.dp).testTag(adminTag("agent-list", "personal")),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+    }
+}

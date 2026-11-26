@@ -95,6 +95,28 @@ ThunderIDConfig(
 )
 ```
 
+## Personal agents
+
+The agents the signed-in user owns, through the owner self-service API (`/users/me/agents`). These are the user's
+own requests: they go through the SDK's transport with the user's token, like the other `/users/me` calls, never
+`http.fetcher`.
+
+- `getMeAgents(kind, limit, offset)` lists the user's agents (`AgentKind.PERSONAL` for personal agents only), and
+  `getMeAgent(id)` reads one. `updateMeAgent(id, request)` replaces the part an owner may change (the attributes,
+  including `name`, the description, the grant types and the redirect URIs); `PersonalAgentFormValues` builds the
+  request from an agent and keeps the attributes it does not edit. `deleteMeAgent(id)` deletes one.
+- `suspendMeAgent(id)` and `unsuspendMeAgent(id)` place and lift the owner's own suspension, and
+  `suspendAllMeAgents()` suspends every personal agent the owner has not already suspended. The owner's suspension
+  is independent of the organization's: `MeAgentSuspensionAction.available(status)` offers an unsuspend only while
+  the owner holds the agent suspended, and lifting it leaves any other suspension in force.
+- `PersonalAgentList` and `PersonalAgentDetails`, with their `Base` variants, show the user's personal agents and
+  the actions the app turns on (`suspendable`, `editable`, `deletable`). Deleting and suspending ask for
+  confirmation first. `rememberGetMeAgents` and the other `remember*MeAgent*` functions wrap the operations for an
+  app that draws its own UI.
+- `AgentList` marks a personal agent, and `AgentDetails` shows its kind and who holds a suspension
+  (`status.details.appliedBy`). The organization lifts only its own suspension, so for an agent only its owner
+  suspended, the lifecycle actions offer Suspend instead of Unsuspend.
+
 ## Playground
 
 The [`playground`](playground) directory contains a Jetpack Compose app that builds this SDK from source and exercises

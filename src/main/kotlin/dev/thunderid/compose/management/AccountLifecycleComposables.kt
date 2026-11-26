@@ -50,6 +50,8 @@ private data class AccountLifecycleInput(
  *
  * @param subject Identifier of the user, agent or application.
  * @param status The identity's effective access status, from the read that rendered it.
+ * @param appliedBy Who holds the identity suspended, from the same read. A suspension held only by others, such as
+ *   an agent's owner, offers the organization's own suspension instead of an unsuspend.
  * @param invalidatedKeys Query keys to refetch after an action, such as the record and the list it appears in.
  */
 @Composable
@@ -60,6 +62,7 @@ fun rememberAccountLifecycle(
     enabled: Boolean,
     invalidatedKeys: List<List<String>>,
     fetcher: ThunderIDFetcher? = null,
+    appliedBy: List<String>? = null,
 ): AccountLifecycleState {
     val scope = rememberCoroutineScope()
     val flows =
@@ -72,7 +75,7 @@ fun rememberAccountLifecycle(
         }
     val configured = flows.data
     return AccountLifecycleState(
-        actions = if (enabled && configured != null) accountLifecycleActions(kind, status, configured) else emptyList(),
+        actions = if (enabled && configured != null) accountLifecycleActions(kind, status, configured, appliedBy) else emptyList(),
         error = execution.error,
         loadError = if (enabled) flows.error else null,
         isRunning = execution.isLoading,

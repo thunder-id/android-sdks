@@ -89,6 +89,8 @@ internal class DeviceGrantRelay(
                 mapOf("Content-Type" to "application/json", "Accept" to "application/json") + headers,
                 json,
             ),
+            // A protocol call, not a change the app makes, so the request observer never sees it.
+            observe = false,
         )
 
     private fun failure(

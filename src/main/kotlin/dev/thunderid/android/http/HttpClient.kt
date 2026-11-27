@@ -9,6 +9,7 @@ import dev.thunderid.android.ThunderIDErrorCode
 import dev.thunderid.android.ThunderIDFetcher
 import dev.thunderid.android.ThunderIDHttpRequest
 import dev.thunderid.android.ThunderIDHttpResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -23,6 +24,18 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 /**
+ * Sees a request through the SDK's HTTP client and how it ended: [response] is `null` when no response
+ * came. It runs on the caller's thread and must be quick; whatever it does, including throwing, never
+ * affects the request.
+ */
+internal fun interface HttpRequestObserver {
+    fun onRequest(
+        request: ThunderIDHttpRequest,
+        response: ThunderIDHttpResponse?,
+    )
+}
+
+/**
  * Performs HTTP requests against the ThunderID server. Enforces HTTPS (spec §11.5).
  */
 internal class HttpClient(
@@ -35,8 +48,48 @@ internal class HttpClient(
     // Set when sign-in runs on a backend: every request is handed to it instead of carrying a token.
     private var backendRouter: (suspend (ThunderIDHttpRequest, ThunderIDFetcher?) -> ThunderIDHttpResponse)? = null
 
+    // Sees every request and how it ended, for telemetry. Never affects the request.
+    @Volatile private var requestObserver: HttpRequestObserver? = null
+
     fun setAccessTokenProvider(provider: suspend () -> String) {
         accessTokenProvider = provider
+    }
+
+    /** Sets the one observer that sees every request and how it ended, or removes it with `null`. */
+    fun setRequestObserver(observer: HttpRequestObserver?) {
+        requestObserver = observer
+    }
+
+    /** Hands [request] and how it ended to the observer. Nothing the observer does reaches the caller. */
+    fun observe(
+        request: ThunderIDHttpRequest,
+        response: ThunderIDHttpResponse?,
+    ) {
+        val observer = requestObserver ?: return
+        try {
+            observer.onRequest(request, response)
+        } catch (_: Throwable) {
+            // An observer never affects the request.
+        }
+    }
+
+    /** Runs [send], handing the request and its response, or its lack of one, to the observer. */
+    private suspend inline fun observed(
+        request: ThunderIDHttpRequest,
+        report: Boolean,
+        send: () -> ThunderIDHttpResponse,
+    ): ThunderIDHttpResponse {
+        val response =
+            try {
+                send()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (report) observe(request, null)
+                throw e
+            }
+        if (report) observe(request, response)
+        return response
     }
 
     /**
@@ -49,16 +102,21 @@ internal class HttpClient(
 
     /**
      * Sends [request] as it is and returns the response whatever its status. Redirects are not
-     * followed, so a header meant for one host is never carried to another.
+     * followed, so a header meant for one host is never carried to another. [observe] is `false` for a
+     * request that forwards one the observer has already seen, such as a call through the backend's proxy,
+     * and for the SDK's own sign-in and protocol calls.
      */
     suspend fun exchange(
         request: ThunderIDHttpRequest,
         fetcher: ThunderIDFetcher? = null,
+        observe: Boolean = true,
     ): ThunderIDHttpResponse {
         if (!request.url.startsWith("https://")) {
             throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "Request URL must use HTTPS")
         }
-        return fetcher?.fetch(request) ?: defaultTransport?.fetch(request) ?: transport(request, followRedirects = false)
+        return observed(request, observe) {
+            fetcher?.fetch(request) ?: defaultTransport?.fetch(request) ?: transport(request, followRedirects = false)
+        }
     }
 
     suspend inline fun <reified T : Any> get(
@@ -71,7 +129,8 @@ internal class HttpClient(
         body: Map<String, Any>,
         requiresAuth: Boolean = true,
         headers: Map<String, String> = emptyMap(),
-    ): T = request("POST", path, body, requiresAuth, headers)
+        observe: Boolean = true,
+    ): T = request("POST", path, body, requiresAuth, headers, observe)
 
     suspend inline fun <reified T : Any> put(
         path: String,
@@ -86,20 +145,22 @@ internal class HttpClient(
         body: Map<String, Any>?,
         requiresAuth: Boolean,
         headers: Map<String, String> = emptyMap(),
+        observe: Boolean = true,
     ): T {
         val urlString = baseUrl + path
         if (!urlString.startsWith("https://")) {
             throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "baseUrl must use HTTPS")
         }
         val jsonBody = body?.let { JSONObject(it).toString() }
-        return parseResponse(execute(method, urlString, jsonBody, requiresAuth, headers, null))
+        return parseResponse(execute(method, urlString, jsonBody, requiresAuth, headers, null, observe = observe))
     }
 
     /**
      * Sends a request to an absolute [url], which may live on a different host from `baseUrl`, with the
      * access token unless [requiresAuth] is `false`. When [fetcher] is set it replaces the built-in transport for this request; the access
      * token is already attached to the request it receives.
-     * [responseError] can replace the default error for a failed HTTP response.
+     * [responseError] can replace the default error for a failed HTTP response. [observe] is `false` for
+     * the SDK's own sign-in and protocol calls, which the request observer never sees.
      */
     suspend inline fun <reified T : Any> send(
         method: String,
@@ -107,12 +168,13 @@ internal class HttpClient(
         jsonBody: String? = null,
         fetcher: ThunderIDFetcher? = null,
         requiresAuth: Boolean = true,
+        observe: Boolean = true,
         noinline responseError: ((ThunderIDHttpResponse) -> IAMException?)? = null,
     ): T {
         if (!url.startsWith("https://")) {
             throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "Request URL must use HTTPS")
         }
-        return parseResponse(execute(method, url, jsonBody, requiresAuth, emptyMap(), fetcher, responseError))
+        return parseResponse(execute(method, url, jsonBody, requiresAuth, emptyMap(), fetcher, responseError, observe))
     }
 
     /**
@@ -128,11 +190,12 @@ internal class HttpClient(
         headers: Map<String, String>,
         fetcher: ThunderIDFetcher?,
         responseError: ((ThunderIDHttpResponse) -> IAMException?)? = null,
+        observe: Boolean = true,
     ): String {
         backendRouter?.let { router ->
             val requestHeaders = mapOf("Content-Type" to "application/json", "Accept" to "application/json") + headers
             val request = ThunderIDHttpRequest(method, url, requestHeaders, jsonBody)
-            return handleResponse(router(request, fetcher), responseError)
+            return handleResponse(observed(request, report = observe) { router(request, fetcher) }, responseError)
         }
         val requestHeaders =
             buildMap {
@@ -147,7 +210,10 @@ internal class HttpClient(
                 }
             }
         val request = ThunderIDHttpRequest(method, url, requestHeaders, jsonBody)
-        val response = fetcher?.fetch(request) ?: defaultTransport?.fetch(request) ?: transport(request)
+        val response =
+            observed(request, report = observe) {
+                fetcher?.fetch(request) ?: defaultTransport?.fetch(request) ?: transport(request)
+            }
         return handleResponse(response, responseError)
     }
 
@@ -196,7 +262,14 @@ internal class HttpClient(
                         connection.errorStream?.bufferedReader()?.readText() ?: ""
                     }
                 }.getOrDefault("")
-            ThunderIDHttpResponse(statusCode, responseBody)
+            val responseHeaders =
+                runCatching {
+                    connection.headerFields
+                        .orEmpty()
+                        .filterKeys { it != null }
+                        .mapValues { (_, values) -> values.joinToString(", ") }
+                }.getOrDefault(emptyMap())
+            ThunderIDHttpResponse(statusCode, responseBody, responseHeaders)
         }
 
     private fun handleResponse(

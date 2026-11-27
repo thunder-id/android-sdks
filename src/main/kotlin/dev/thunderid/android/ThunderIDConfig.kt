@@ -57,6 +57,9 @@ data class ThunderIDConfig(
      * [DEFAULT_VENDOR].
      */
     val vendor: String = DEFAULT_VENDOR,
+    // Telemetry - usage events reported to an endpoint the application configures. Off unless set with an
+    // HTTPS `endpoint`. See [TelemetryConfig].
+    val telemetry: TelemetryConfig? = null,
 ) {
     companion object {
         const val DEFAULT_VENDOR: String = "thunderid"

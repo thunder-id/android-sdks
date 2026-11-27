@@ -256,6 +256,8 @@ internal class OAuthClient(
                 mapOf("Content-Type" to "application/x-www-form-urlencoded", "Accept" to JSON),
                 encodeForm(form),
             ),
+            // A protocol call, not a change the app makes, so the request observer never sees it.
+            observe = false,
         )
 
     private fun parseToken(response: ThunderIDHttpResponse): TokenResponse {

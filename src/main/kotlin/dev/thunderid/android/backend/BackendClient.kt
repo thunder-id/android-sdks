@@ -294,7 +294,8 @@ internal class BackendClient(
                 )
         val headers = withoutCredentials(request.headers)
 
-        suspend fun send() = http.exchange(request.copy(url = proxyUrl, headers = withHandle(headers)), fetcher)
+        // The caller has seen the request at its API URL, so the proxied copy is not observed again.
+        suspend fun send() = http.exchange(request.copy(url = proxyUrl, headers = withHandle(headers)), fetcher, observe = false)
 
         val response = send()
         if (response.statusCode != 401) return response
@@ -354,11 +355,12 @@ internal class BackendClient(
         fetcher: ThunderIDFetcher?,
     ): ThunderIDHttpResponse {
         val headers = withoutCredentials(request.headers)
-        if (!endpoints.attachToken) return http.exchange(request.copy(headers = headers), fetcher)
+        if (!endpoints.attachToken) return http.exchange(request.copy(headers = headers), fetcher, observe = false)
 
         suspend fun send(renew: Boolean): ThunderIDHttpResponse {
             val token = getAccessToken(renew)
-            return http.exchange(request.copy(headers = headers + ("Authorization" to "Bearer $token")), fetcher)
+            val authorized = request.copy(headers = headers + ("Authorization" to "Bearer $token"))
+            return http.exchange(authorized, fetcher, observe = false)
         }
 
         val response = send(renew = false)
@@ -436,7 +438,7 @@ internal class BackendClient(
                 put("Accept", "application/json")
                 if (body != null) put("Content-Type", "application/json")
             }
-        return http.exchange(ThunderIDHttpRequest(method, url, withHandle(headers), body))
+        return http.exchange(ThunderIDHttpRequest(method, url, withHandle(headers), body), observe = false)
     }
 
     private fun withHandle(headers: Map<String, String>): Map<String, String> =

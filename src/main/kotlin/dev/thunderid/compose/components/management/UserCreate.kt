@@ -207,6 +207,9 @@ internal fun AdminFormActions(
  * Creates a user through the user management operations, in [ouId] or, when it is `null`, the signed-in user's
  * organization unit. Offers the user types the server lists.
  *
+ * It renders only for a user the server reports may create one (`user` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param onCreated Receives the user as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseUserCreate].
  */
@@ -221,6 +224,7 @@ fun UserCreate(
     description: String? = null,
     content: (@Composable (UserCreateFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("user", "create")) return
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val resolvedOuId = rememberDefaultOuId(ouId)

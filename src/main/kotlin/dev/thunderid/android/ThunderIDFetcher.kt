@@ -71,6 +71,7 @@ data class ThunderIDHttpConfig(
  * `{clientRegistrations}/{clientId}`.
  * @property projects Defaults to `{baseUrl}/projects`.
  * @property authorizationDetailTypes Defaults to `{baseUrl}/authorization-detail-types`.
+ * @property capabilities Defaults to `{baseUrl}/capabilities`.
  * @property wellKnown The OpenID provider's discovery document URL. Defaults to
  * `{baseUrl}/.well-known/openid-configuration`. Set it when `baseUrl` is a provider's tenant root and its issuer
  * lives below it, for example `https://idp.example.com/t/acme/oauth2/token/.well-known/openid-configuration`
@@ -109,5 +110,6 @@ data class ThunderIDEndpoints(
     val clientRegistrations: String? = null,
     val projects: String? = null,
     val authorizationDetailTypes: String? = null,
+    val capabilities: String? = null,
     val wellKnown: String? = null,
 )

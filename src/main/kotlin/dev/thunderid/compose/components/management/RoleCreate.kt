@@ -97,6 +97,9 @@ fun BaseRoleCreate(
  * Creates a role, granting no permissions, through the role management operations, in [ouId] or, when it
  * is `null`, the signed-in user's organization unit.
  *
+ * It renders only for a user the server reports may create one (`role` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param onCreated Receives the role as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseRoleCreate].
  */
@@ -110,6 +113,7 @@ fun RoleCreate(
     description: String? = null,
     content: (@Composable (NamedResourceFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("role", "create")) return
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val resolvedOuId = rememberDefaultOuId(ouId)

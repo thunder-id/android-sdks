@@ -104,6 +104,11 @@ fun BaseRoleDetails(
  * Shows one role, loaded through the role management operations, with the permissions it grants and who it is
  * assigned to.
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`role` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param editable Lets the role be assigned and unassigned, and its permissions be granted and revoked, once the
  *   role is loaded. Revoking a permission asks for confirmation. Off by default.
  * @param deletable Shows a delete action, which asks for confirmation. Never shown for a read-only role. Off by
@@ -134,6 +139,7 @@ fun RoleDetails(
     val role = rememberGetRole(roleId)
     val deletion = rememberDeleteRole(administrationMode = administrationMode)
     val loaded = role.data
+    val access = rememberCapabilities().recordAccess("role", isReadOnly = loaded?.isReadOnly, isOwnedByOU = null)
     BaseRoleDetails(
         role = loaded,
         modifier = modifier,
@@ -143,7 +149,7 @@ fun RoleDetails(
         isLoading = role.isLoading,
         isDeleting = deletion.isLoading,
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 { scope.launch { deletion.mutate(roleId)?.let { onDeleted?.invoke() } } }
             } else {
                 null
@@ -152,7 +158,7 @@ fun RoleDetails(
         permissions = {
             RolePermissions(
                 roleId = roleId,
-                editable = editable,
+                editable = editable && !access.readOnly,
                 administrationMode = administrationMode,
                 resourceServerNames = resourceServerNames,
             )
@@ -160,7 +166,7 @@ fun RoleDetails(
         assignments = {
             RoleAssignments(
                 roleId = roleId,
-                editable = editable && loaded != null,
+                editable = editable && !access.readOnly && loaded != null,
                 administrationMode = administrationMode,
                 ouId = loaded?.ouId,
             )

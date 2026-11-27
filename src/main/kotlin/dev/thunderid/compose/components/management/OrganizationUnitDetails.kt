@@ -285,6 +285,11 @@ fun BaseOrganizationUnitDetails(
  * Shows one organization unit, loaded through the organization unit management operations, with its child units
  * and the users, groups and roles in it (the first [memberLimit] of each, read only).
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`ou` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param editable Lets the name, handle and description be edited. Off by default.
  * @param deletable Shows a delete action, which asks for confirmation. The server refuses to delete a unit that
  *   still has child units or other resources; the refusal is shown as a translated message. Off by default.
@@ -314,6 +319,7 @@ fun OrganizationUnitDetails(
     val update = rememberUpdateOrganizationUnit()
     val deletion = rememberDeleteOrganizationUnit()
     val loaded = unit.data
+    val access = rememberCapabilities().recordAccess("ou", isReadOnly = null, isOwnedByOU = null)
     BaseOrganizationUnitDetails(
         organizationUnit = loaded,
         modifier = modifier,
@@ -330,13 +336,13 @@ fun OrganizationUnitDetails(
         isUpdating = update.isLoading,
         onSelectChild = onSelectChild,
         onUpdate =
-            if (editable && loaded != null) {
+            if (editable && !access.readOnly && loaded != null) {
                 { edit -> scope.launch { update.mutate(organizationUnitId to loaded.toRequest(edit)) } }
             } else {
                 null
             },
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 { scope.launch { deletion.mutate(organizationUnitId)?.let { onDeleted?.invoke() } } }
             } else {
                 null

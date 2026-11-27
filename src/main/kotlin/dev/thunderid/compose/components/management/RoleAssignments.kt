@@ -154,6 +154,9 @@ fun BaseRoleAssignments(
 /**
  * Shows who a role is assigned to through the role management operations.
  *
+ * Editing is offered only when turned on here and the server reports the signed-in user may update the
+ * resource. That decides what is offered, not what is allowed: the server still authorizes every request.
+ *
  * @param editable Lets the role be assigned to users, groups and agents, and be unassigned. Off by default.
  * @param administrationMode How an assignment is removed: [AdministrationMode.FLOW] runs the assignment removal
  *   flow the server configures, which can revoke grants and end sessions first. Defaults to
@@ -174,22 +177,23 @@ fun RoleAssignments(
     ouId: String? = null,
     content: (@Composable (RoleAssignmentsState) -> Unit)? = null,
 ) {
+    val offersEditing = editable && rememberCapabilities().can("role", "update")
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     var typeFilter by remember(roleId) { mutableStateOf<RoleAssigneeType?>(null) }
     val assignments = rememberGetRoleAssignments(roleId, limit = 100, type = typeFilter)
     // A new filter is a new query key, which starts with no data, so no candidate from the previous unit is offered.
     val filter = roleAssignmentCandidateFilter(ouId)
-    val users = rememberGetUsers(limit = 100, filter = filter, enabled = editable)
-    val groups = rememberGetGroups(limit = 100, filter = filter, enabled = editable)
-    val agents = rememberGetAgents(limit = 100, filter = filter, enabled = editable)
+    val users = rememberGetUsers(limit = 100, filter = filter, enabled = offersEditing)
+    val groups = rememberGetGroups(limit = 100, filter = filter, enabled = offersEditing)
+    val agents = rememberGetAgents(limit = 100, filter = filter, enabled = offersEditing)
     val assign = rememberAddRoleAssignments()
     val unassign = rememberRemoveRoleAssignments(administrationMode = administrationMode)
     BaseRoleAssignments(
         assignments = assignments.data?.assignments.orEmpty(),
         modifier = modifier,
         candidates =
-            if (editable) {
+            if (offersEditing) {
                 mapOf(
                     RoleAssigneeType.USER to
                         users.data
@@ -216,13 +220,13 @@ fun RoleAssignments(
         isLoading = assignments.isLoading,
         isMutating = assign.isLoading || unassign.isLoading,
         onAssign =
-            if (editable) {
+            if (offersEditing) {
                 { assignment -> scope.launch { assign.mutate(RoleAssignmentsInput(roleId, listOf(assignment))) } }
             } else {
                 null
             },
         onUnassign =
-            if (editable) {
+            if (offersEditing) {
                 { assignment ->
                     scope.launch {
                         unassign.mutate(RoleAssignmentsInput(roleId, listOf(RoleAssignmentInput(assignment.id, assignment.type))))

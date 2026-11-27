@@ -463,6 +463,9 @@ private fun SharingOverlayPanel(
  * that [resourceType], and, when [editable], creates, edits and deletes them. Details components do not embed it:
  * place it where the app wants it.
  *
+ * Editing is offered only when turned on here and the server reports the signed-in user may update the
+ * resource. That decides what is offered, not what is allowed: the server still authorizes every request.
+ *
  * @param resourceType The kind of resource [resourceId] names.
  * @param editable Lets policies be created, edited and deleted. Deletes ask for confirmation. Off by default.
  * @param ouId Shows the overlay rules resolved for this organization unit, read only.
@@ -480,6 +483,7 @@ fun SharingPolicies(
     actions: (@Composable RowScope.() -> Unit)? = null,
     content: (@Composable (SharingPoliciesState) -> Unit)? = null,
 ) {
+    val offersEditing = editable && rememberCapabilities().can(resourceType.capabilityResource, "update")
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     var offset by remember(limit, resourceType, resourceId) { mutableStateOf(0) }
@@ -505,16 +509,26 @@ fun SharingPolicies(
         overlay = overlay.data.takeIf { !ouId.isNullOrBlank() },
         overlayOuId = ouId,
         isMutating = create.isLoading || update.isLoading || deletion.isLoading,
-        onCreate = if (editable) ({ request -> scope.launch { create.mutate(request) } }) else null,
+        onCreate = if (offersEditing) ({ request -> scope.launch { create.mutate(request) } }) else null,
         onUpdate =
-            if (editable) {
+            if (offersEditing) {
                 { policy, request -> scope.launch { update.mutate(SharingPolicyUpdateInput(policy.id, request)) } }
             } else {
                 null
             },
-        onDelete = if (editable) ({ policy -> scope.launch { deletion.mutate(policy.id) } }) else null,
+        onDelete = if (offersEditing) ({ policy -> scope.launch { deletion.mutate(policy.id) } }) else null,
         title = title,
         actions = actions,
         content = content,
     )
 }
+
+/** The capability resource a shared resource of this kind is changed under. */
+internal val SharingResourceType.capabilityResource: String
+    get() =
+        when (this) {
+            SharingResourceType.APPLICATION -> "app"
+            SharingResourceType.FLOW -> "flow"
+            SharingResourceType.ROLE -> "role"
+            SharingResourceType.USER -> "user"
+        }

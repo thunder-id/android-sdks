@@ -364,6 +364,9 @@ fun BaseApplicationCreate(
  * When the server issues a client secret, the form shows it once and calls [onCreated] only after it is
  * dismissed, so the secret is not lost by navigating away. The secret is held in memory only for that time.
  *
+ * It renders only for a user the server reports may create one (`app` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param onCreated Receives the application as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseApplicationCreate].
  */
@@ -377,6 +380,7 @@ fun ApplicationCreate(
     description: String? = null,
     content: (@Composable (ApplicationCreateFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("app", "create")) return
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val placement = rememberCreatePlacement(ouId)

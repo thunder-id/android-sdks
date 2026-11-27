@@ -132,6 +132,9 @@ fun BaseProjectCreate(
 /**
  * Creates a project through the project management operations. Only the Control Plane serves projects.
  *
+ * It renders only for a user the server reports may create one (`project` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param onCreated Receives the project as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseProjectCreate].
  */
@@ -144,6 +147,7 @@ fun ProjectCreate(
     description: String? = null,
     content: (@Composable (ProjectCreateFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("project", "create")) return
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val create = rememberCreateProject()

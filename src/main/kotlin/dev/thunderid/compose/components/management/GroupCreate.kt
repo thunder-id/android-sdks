@@ -120,6 +120,9 @@ fun BaseGroupCreate(
  * Creates a group through the group management operations, in [ouId] or, when it is `null`, the signed-in
  * user's organization unit.
  *
+ * It renders only for a user the server reports may create one (`group` `create`). That decides what is
+ * offered, not what is allowed: the server still authorizes every request.
+ *
  * @param onCreated Receives the group as the server stored it.
  * @param content Renders custom UI in place of the default form. See [BaseGroupCreate].
  */
@@ -133,6 +136,7 @@ fun GroupCreate(
     description: String? = null,
     content: (@Composable (NamedResourceFormState) -> Unit)? = null,
 ) {
+    if (!rememberCapabilities().can("group", "create")) return
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val resolvedOuId = rememberDefaultOuId(ouId)

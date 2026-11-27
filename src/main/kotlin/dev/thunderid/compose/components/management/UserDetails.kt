@@ -282,6 +282,11 @@ internal fun offersVerificationLink(
 /**
  * Shows one user, loaded through the user management operations, with the groups it belongs to.
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`user` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param deletable Shows a delete action, which asks for confirmation. Off by default.
  * @param editable Lets the user's text attributes be edited in place. Off by default.
  * @param lifecycleActions Lets the user be suspended, unsuspended and unlocked from this view. Each action runs
@@ -328,6 +333,7 @@ fun UserDetails(
     val verificationHandle = verificationFlow.data
     val verification = key(userId, verificationHandle) { rememberSendUserAttributeVerification(verificationHandle) }
     val loaded = user.data
+    val access = rememberCapabilities().recordAccess("user", isReadOnly = loaded?.isReadOnly, isOwnedByOU = null)
     val typeHandle = verificationUserTypeHandle(loaded, attributeVerification)
     val userType =
         rememberResourceQuery(listOf(UserQueryKeys.USER_TYPES, "handle=${typeHandle.orEmpty()}"), enabled = typeHandle != null) {
@@ -338,7 +344,7 @@ fun UserDetails(
             kind = AccountLifecycleSubjectKind.USER,
             subject = userId,
             status = loaded?.status?.value,
-            enabled = lifecycleActions,
+            enabled = lifecycleActions && access.canChangeState,
             invalidatedKeys = listOf(listOf(UserQueryKeys.USER, userId), listOf(UserQueryKeys.USERS)),
         )
     BaseUserDetails(
@@ -359,13 +365,13 @@ fun UserDetails(
         isDeleting = deletion.isLoading,
         isUpdating = update.isLoading,
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 { scope.launch { deletion.mutate(userId)?.let { onDeleted?.invoke() } } }
             } else {
                 null
             },
         onUpdate =
-            if (editable && loaded != null) {
+            if (editable && !access.readOnly && loaded != null) {
                 { attributes ->
                     scope.launch {
                         update.mutate(
@@ -378,7 +384,7 @@ fun UserDetails(
             },
         lifecycleActions = lifecycle.actions,
         isRunningLifecycleAction = lifecycle.isRunning,
-        onLifecycleAction = if (lifecycleActions) lifecycle.run else null,
+        onLifecycleAction = if (lifecycleActions && access.canChangeState) lifecycle.run else null,
         isSendingVerification = verification.isLoading,
         sentVerification = verification.data,
         onSendVerification =

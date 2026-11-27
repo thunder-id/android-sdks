@@ -391,6 +391,11 @@ fun BaseApplicationDetails(
 /**
  * Shows one application, loaded through the application management operations.
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`app` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param deletable Shows a delete action, which asks for confirmation. Off by default.
  * @param editable Lets the general fields, redirect URIs and grant types be edited in place. Off by default.
  * @param secretRegenerable Shows a regenerate secret action, which asks for confirmation and shows the new secret
@@ -425,12 +430,13 @@ fun ApplicationDetails(
     val regeneration = rememberRegenerateClientSecret(administrationMode)
     var secret by remember(applicationId) { mutableStateOf<String?>(null) }
     val loaded = application.data
+    val access = rememberCapabilities().recordAccess("app", isReadOnly = loaded?.isReadOnly, isOwnedByOU = null)
     val lifecycle =
         rememberAccountLifecycle(
             kind = AccountLifecycleSubjectKind.APPLICATION,
             subject = applicationId,
             status = loaded?.status?.value,
-            enabled = lifecycleActions,
+            enabled = lifecycleActions && access.canChangeState,
             invalidatedKeys =
                 listOf(listOf(ApplicationQueryKeys.APPLICATION, applicationId), listOf(ApplicationQueryKeys.APPLICATIONS)),
         )
@@ -451,19 +457,19 @@ fun ApplicationDetails(
         clientSecret = secret,
         onSecretDismiss = { secret = null },
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 { scope.launch { deletion.mutate(applicationId)?.let { onDeleted?.invoke() } } }
             } else {
                 null
             },
         onUpdate =
-            if (editable && loaded != null) {
+            if (editable && !access.readOnly && loaded != null) {
                 { edit -> scope.launch { update.mutate(applicationId to applyApplicationEdit(loaded, edit)) } }
             } else {
                 null
             },
         onRegenerateSecret =
-            if (secretRegenerable) {
+            if (secretRegenerable && !access.readOnly) {
                 {
                     scope.launch {
                         regeneration.mutate(applicationId)?.let { result ->
@@ -478,7 +484,7 @@ fun ApplicationDetails(
             },
         lifecycleActions = lifecycle.actions,
         isRunningLifecycleAction = lifecycle.isRunning,
-        onLifecycleAction = if (lifecycleActions) lifecycle.run else null,
+        onLifecycleAction = if (lifecycleActions && access.canChangeState) lifecycle.run else null,
         actions = actions,
         content = content,
     )

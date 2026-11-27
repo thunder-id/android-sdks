@@ -138,6 +138,11 @@ fun BaseAgentDetails(
 /**
  * Shows one agent, loaded through the agent management operations, with its groups and roles.
  *
+ * Its data-changing actions are offered only when turned on here and the server reports the signed-in user
+ * may perform them (`agent` capabilities, through [dev.thunderid.compose.management.CapabilitiesState.recordAccess]):
+ * a locked or shared-in record opens read-only. That decides what is offered, not what is allowed: the server
+ * still authorizes every request.
+ *
  * @param deletable Shows a delete action, which asks for confirmation. Off by default.
  * @param lifecycleActions Lets the agent be suspended, unsuspended and unlocked from this view. Each action runs
  *   through its administration flow and is offered only when the server configures that flow and the agent's
@@ -159,6 +164,7 @@ fun AgentDetails(
     val i18n = LocalThunderID.current.i18n
     val scope = rememberCoroutineScope()
     val agent = rememberGetAgent(agentId)
+    val access = rememberCapabilities().recordAccess("agent", isReadOnly = agent.data?.isReadOnly, isOwnedByOU = null)
     val groups = rememberGetAgentGroups(agentId, limit = 100)
     val roles = rememberGetAgentRoles(agentId, limit = 100)
     val deletion = rememberDeleteAgent()
@@ -167,7 +173,7 @@ fun AgentDetails(
             kind = AccountLifecycleSubjectKind.AGENT,
             subject = agentId,
             status = agent.data?.status?.value,
-            enabled = lifecycleActions,
+            enabled = lifecycleActions && access.canChangeState,
             invalidatedKeys = listOf(listOf(AgentQueryKeys.AGENT, agentId), listOf(AgentQueryKeys.AGENTS)),
         )
     BaseAgentDetails(
@@ -183,14 +189,14 @@ fun AgentDetails(
         isLoading = agent.isLoading,
         isDeleting = deletion.isLoading,
         onDelete =
-            if (deletable) {
+            if (deletable && access.canDelete) {
                 { scope.launch { deletion.mutate(agentId)?.let { onDeleted?.invoke() } } }
             } else {
                 null
             },
         lifecycleActions = lifecycle.actions,
         isRunningLifecycleAction = lifecycle.isRunning,
-        onLifecycleAction = if (lifecycleActions) lifecycle.run else null,
+        onLifecycleAction = if (lifecycleActions && access.canChangeState) lifecycle.run else null,
         actions = actions,
         content = content,
     )

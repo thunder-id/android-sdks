@@ -14,6 +14,7 @@ import dev.thunderid.android.User
 import dev.thunderid.android.UserProfile
 import dev.thunderid.android.api.management.Project
 import dev.thunderid.compose.i18n.ThunderIDI18n
+import dev.thunderid.compose.management.CapabilitiesState
 import dev.thunderid.compose.management.ResourceInvalidator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -28,8 +29,27 @@ class ThunderIDState(
     val i18n: ThunderIDI18n,
     private val scope: CoroutineScope,
 ) {
-    var user by mutableStateOf<User?>(null)
-        internal set
+    /**
+     * The signed-in user's management capabilities, shared by every component under this state. Nothing is read
+     * until something calls [CapabilitiesState.load]. They decide what to offer, not what is allowed: the server
+     * authorizes every request.
+     */
+    val capabilities =
+        CapabilitiesState(
+            scope = scope,
+            read = { client.getCapabilities() },
+            grantedPermissions = { client.getGrantedPermissions() },
+        )
+
+    private var userState by mutableStateOf<User?>(null)
+
+    var user: User?
+        get() = userState
+        internal set(value) {
+            userState = value
+            // Sign-in, sign-out, a refreshed user and an organization unit switch all land here.
+            capabilities.setUser(value)
+        }
     var isLoading by mutableStateOf(false)
         internal set
     var isInitialized by mutableStateOf(false)

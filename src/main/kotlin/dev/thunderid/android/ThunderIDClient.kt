@@ -92,8 +92,6 @@ class ThunderIDClient internal constructor(
     /** The organization unit the redirect sign-in in progress is bounded to, for redeeming its code. */
     private var pendingOrganizationUnitId: String? = null
 
-    /** Whether the embedded flow in progress was started for an organization unit, so it replaces the session. */
-    private var boundedFlowInProgress = false
     private val pkceManager = PKCEManager()
     private var loading = false
     private var currentUser: User? = null
@@ -338,6 +336,10 @@ class ThunderIDClient internal constructor(
 
     // MARK: - Authentication
 
+    /**
+     * Runs one step of the application's sign-in flow in the app. Needs `clientId`: a completed flow's assertion
+     * is exchanged for the access token, and kept as the ID token.
+     */
     suspend fun signIn(
         payload: EmbeddedSignInPayload,
         request: EmbeddedFlowRequestConfig,
@@ -351,6 +353,7 @@ class ThunderIDClient internal constructor(
     ): EmbeddedFlowResponse {
         requireInitialized()
         refuseOnBackend("Embedded sign-in")
+        requireEmbeddedClientId()
         loading = true
         return try {
             val response =
@@ -358,7 +361,6 @@ class ThunderIDClient internal constructor(
                     flowClient!!.submit(payload.flowId, payload.actionId, payload.inputs, payload.challengeToken)
                 } else {
                     val unit = request.organizationUnitId.takeIf { request.flowType == FlowType.AUTHENTICATION }
-                    boundedFlowInProgress = unit != null
                     mapOrganizationUnitRefusal(unit) {
                         flowClient!!.initiate(
                             request.applicationId,
@@ -369,8 +371,7 @@ class ThunderIDClient internal constructor(
                         )
                     }
                 }
-            tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
-            establishSessionIfNeeded(response)
+            keepFlowStep(response)
             response
         } finally {
             loading = false
@@ -594,8 +595,8 @@ class ThunderIDClient internal constructor(
      *   `invalid_grant` is dropped, and any refusal but an unavailable unit goes on to the next path.
      * - With [SwitchOrganizationUnitOptions.browser], a redirect sign-in through the browser.
      * - Otherwise the application's `AUTHENTICATION` flow in embedded mode, presenting the SSO session handles
-     *   kept from earlier flow steps. It returns [OrganizationUnitSwitchResult.SignInRequired] when the flow
-     *   needs the user.
+     *   kept from earlier flow steps, and exchanges the assertion of the completed flow (needs `clientId`). It
+     *   returns [OrganizationUnitSwitchResult.SignInRequired] when the flow needs the user.
      *
      * @throws IAMException [ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE] when the unit does not exist
      * or the application cannot be used from it; the server does not tell the two apart.
@@ -947,12 +948,14 @@ class ThunderIDClient internal constructor(
 
     // MARK: - Registration
 
+    /** Runs one step of the sign-up flow. Needs `clientId`; a flow that completes with an assertion signs in. */
     suspend fun signUp(
         payload: EmbeddedSignInPayload? = null,
         request: EmbeddedFlowRequestConfig? = null,
     ): EmbeddedFlowResponse {
         requireInitialized()
         refuseOnBackend("Embedded sign-up")
+        requireEmbeddedClientId()
         val appId = request?.applicationId ?: config?.applicationId ?: ""
         val response =
             if (payload?.flowId != null) {
@@ -960,8 +963,7 @@ class ThunderIDClient internal constructor(
             } else {
                 flowClient!!.initiate(appId, request?.flowType ?: FlowType.REGISTRATION, attestationToken())
             }
-        tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
-        establishSessionIfNeeded(response)
+        keepFlowStep(response)
         return response
     }
 
@@ -1028,9 +1030,16 @@ class ThunderIDClient internal constructor(
             return User(session.user.orEmpty()).also { currentUser = it }
         }
         tokenStore?.accessToken()?.let { token ->
-            val claims = runCatching { decodeJwtToken(token) }.getOrNull()
-            if (claims != null && !(claims["sub"] as? String).isNullOrEmpty()) {
-                val user = User(claims.filterValues { it != null }.mapValues { it.value as Any })
+            var claims = runCatching { decodeJwtToken(token) }.getOrNull()
+            val sub = claims?.get("sub") as? String
+            if (claims != null && !sub.isNullOrEmpty()) {
+                // The ID token fills in claims the access token lacks, such as the user's name after an app-native sign-in.
+                tokenStore
+                    ?.idToken()
+                    ?.let { runCatching { decodeJwtToken(it) }.getOrNull() }
+                    ?.takeIf { it["sub"] == sub }
+                    ?.let { claims = it + claims!! }
+                val user = User(claims!!.filterValues { it != null }.mapValues { it.value as Any })
                 currentUser = user
                 return user
             }
@@ -1316,20 +1325,68 @@ class ThunderIDClient internal constructor(
         return cfg.attestationTokenProvider?.invoke()
     }
 
-    private fun establishSessionIfNeeded(response: EmbeddedFlowResponse) {
-        val assertion = response.assertion
-        if (response.flowStatus != FlowStatus.COMPLETE || assertion.isNullOrEmpty()) {
+    /** The `clientId` an embedded flow needs to exchange its assertion; checked before each flow request. */
+    private fun requireEmbeddedClientId(): String =
+        config?.clientId?.takeIf { it.isNotEmpty() }
+            ?: throw IAMException(
+                ThunderIDErrorCode.INVALID_CONFIGURATION,
+                "clientId is required for embedded sign-in and sign-up, next to applicationId",
+            )
+
+    /**
+     * Keeps a flow step's SSO session handles and, when the step completes with an assertion, replaces the
+     * session with the token the assertion is exchanged for. When the exchange fails, the previous session stays
+     * and the step's new handles are dropped, so the next attempt runs the flow again.
+     */
+    private suspend fun keepFlowStep(response: EmbeddedFlowResponse) {
+        val store = tokenStore!!
+        val assertion = response.assertion?.takeIf { response.flowStatus == FlowStatus.COMPLETE && it.isNotEmpty() }
+        if (assertion == null) {
+            store.updateFlowSessions(response.sessionData, response.clearedSessions)
             return
         }
-        val tokens = TokenResponse(accessToken = assertion, tokenType = "Bearer")
-        // A flow bounded to an organization unit replaces the whole session, as a switch must.
-        if (boundedFlowInProgress) tokenStore!!.replace(tokens) else tokenStore!!.save(tokens)
-        boundedFlowInProgress = false
-        try {
-            val claims = decodeJwtToken(assertion)
-            currentUser = User(claims.filterValues { it != null }.mapValues { it.value as Any })
-        } catch (_: Exception) {
-            // assertion is stored; user info will be fetched via getUser() on next access
-        }
+        // Handle expiry counts from the step's response, not from after the exchange.
+        val receivedAt = System.currentTimeMillis()
+        val tokens =
+            try {
+                exchangeFlowAssertion(assertion)
+            } catch (e: Throwable) {
+                store.updateFlowSessions(null, response.clearedSessions)
+                throw e
+            }
+        store.updateFlowSessions(response.sessionData, response.clearedSessions, receivedAt)
+        store.replace(tokens)
+        currentUser = null
+    }
+
+    /**
+     * Exchanges a completed flow's [assertion] for an access token at the token endpoint (RFC 8693), with no
+     * scope: the token carries what the flow granted. The assertion is kept as the ID token.
+     */
+    private suspend fun exchangeFlowAssertion(assertion: String): TokenResponse {
+        val form =
+            mapOf(
+                "grant_type" to TOKEN_EXCHANGE_GRANT,
+                "client_id" to requireEmbeddedClientId(),
+                "subject_token" to assertion,
+                "subject_token_type" to "urn:ietf:params:oauth:token-type:jwt",
+            )
+        val response =
+            try {
+                oauthClient!!.requestToken(null, form, "The flow assertion exchange was refused")
+            } catch (e: IAMException) {
+                if (e.serverError?.code != "unauthorized_client") throw e
+                throw IAMException(
+                    ThunderIDErrorCode.INVALID_CONFIGURATION,
+                    "An embedded sign-in needs the $TOKEN_EXCHANGE_GRANT grant type on the application",
+                    e,
+                    e.serverError,
+                )
+            }
+        return response.copy(idToken = assertion)
+    }
+
+    private companion object {
+        const val TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
     }
 }

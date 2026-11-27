@@ -447,7 +447,7 @@ class ChecksController(
         if (!state.isSignedIn) return fail("Not signed in. Sign in first.")
         val before = state.client.getAccessToken()
         if (storage.find("refresh_token") == null) {
-            return fail("No refresh token stored. App-native sign-in returns an assertion only.")
+            return fail("No refresh token stored. App-native sign-in issues no refresh token.")
         }
         storage.expireAccessToken()
         val after = state.client.getAccessToken()

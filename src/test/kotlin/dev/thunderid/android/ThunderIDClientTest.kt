@@ -3,8 +3,15 @@
 
 package dev.thunderid.android
 
+import com.google.gson.JsonParser
+import dev.thunderid.android.api.account.BASE
+import dev.thunderid.android.api.account.form
+import dev.thunderid.android.api.account.jwt
 import dev.thunderid.android.api.auth.FlowExecutionClient
+import dev.thunderid.android.backend.FakeBackend
+import dev.thunderid.android.backend.response
 import dev.thunderid.android.http.HttpClient
+import dev.thunderid.android.token.TokenStore
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -274,4 +281,186 @@ class ThunderIDClientTest {
         assertEquals("basic_auth", body["action"])
         assertFalse(body.containsKey("actionId"))
     }
+
+    // Embedded sign-in session
+
+    private val fake = FakeBackend()
+    private val embedded = ThunderIDClient(fake)
+    private val embeddedConfig = ThunderIDConfig(baseUrl = BASE, clientId = "app", applicationId = "app-id")
+    private val issued = jwt("sub" to "u1", "client_id" to "app")
+    private val assertion = jwt("sub" to "u1", "username" to "alice")
+
+    private fun completeFlow(sessionData: String = "") {
+        fake.on(
+            "POST",
+            "$BASE/flow/execute",
+            response(200, """{"flowStatus":"COMPLETE","assertion":"$assertion"$sessionData}"""),
+        )
+    }
+
+    private fun issueToken() {
+        fake.on("POST", "$BASE/oauth2/token", response(200, """{"access_token":"$issued","token_type":"Bearer","expires_in":3600}"""))
+    }
+
+    private suspend fun assertRefused(
+        code: ThunderIDErrorCode,
+        block: suspend () -> Unit,
+    ): IAMException {
+        try {
+            block()
+        } catch (e: IAMException) {
+            assertEquals(code, e.code)
+            return e
+        }
+        fail("Expected IAMException $code")
+        throw AssertionError()
+    }
+
+    @Test
+    fun `a completed embedded sign-in keeps the token its assertion is exchanged for`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            val store = TokenStore(storage)
+            embedded.initialize(embeddedConfig, storage)
+            store.save(TokenResponse(accessToken = "old", tokenType = "Bearer", refreshToken = "old-refresh"))
+            completeFlow()
+            issueToken()
+
+            embedded.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+
+            val exchange = form(fake.to("$BASE/oauth2/token").single().body)
+            assertEquals(
+                mapOf(
+                    "grant_type" to "urn:ietf:params:oauth:grant-type:token-exchange",
+                    "client_id" to "app",
+                    "subject_token" to assertion,
+                    "subject_token_type" to "urn:ietf:params:oauth:token-type:jwt",
+                ),
+                exchange,
+            )
+            assertEquals(issued, store.accessToken())
+            assertEquals(assertion, store.idToken())
+            assertNull(store.refreshToken())
+            assertFalse(store.isNearExpiry())
+        }
+
+    @Test
+    fun `a completed embedded sign-up keeps the exchanged token too`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            embedded.initialize(embeddedConfig, storage)
+            completeFlow()
+            issueToken()
+
+            embedded.signUp()
+
+            assertEquals(issued, TokenStore(storage).accessToken())
+        }
+
+    @Test
+    fun `an application without the token exchange grant gets no session and the step's handles are dropped`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            val store = TokenStore(storage)
+            embedded.initialize(embeddedConfig, storage)
+            store.save(TokenResponse(accessToken = "old", tokenType = "Bearer"))
+            store.updateFlowSessions(listOf(FlowSessionData("f-0", "h-0")), null)
+            completeFlow(""","sessionData":[{"flowIdentifier":"f-1","sessionHandle":"h-1"}],"clearedSessions":["f-0"]""")
+            fake.on("POST", "$BASE/oauth2/token", response(400, """{"error":"unauthorized_client"}"""))
+
+            val error =
+                assertRefused(ThunderIDErrorCode.INVALID_CONFIGURATION) {
+                    embedded.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+                }
+
+            assertEquals("unauthorized_client", error.serverError?.code)
+            assertTrue(error.message!!.contains("urn:ietf:params:oauth:grant-type:token-exchange"))
+            assertEquals("old", store.accessToken())
+            assertTrue(store.flowSessions().isEmpty())
+        }
+
+    @Test
+    fun `another refusal of the exchange is reported as the server's error`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            embedded.initialize(embeddedConfig, storage)
+            completeFlow()
+            fake.on("POST", "$BASE/oauth2/token", response(400, """{"error":"invalid_request"}"""))
+
+            val error =
+                assertRefused(ThunderIDErrorCode.INVALID_INPUT) {
+                    embedded.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+                }
+
+            assertEquals("invalid_request", error.serverError?.code)
+            assertNull(TokenStore(storage).accessToken())
+        }
+
+    @Test
+    fun `an embedded flow does not start without a clientId`() =
+        runTest {
+            embedded.initialize(embeddedConfig.copy(clientId = null), InMemoryStorageAdapter())
+
+            assertRefused(ThunderIDErrorCode.INVALID_CONFIGURATION) {
+                embedded.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+            }
+            assertRefused(ThunderIDErrorCode.INVALID_CONFIGURATION) { embedded.signUp() }
+            assertTrue(fake.requests.isEmpty())
+        }
+
+    @Test
+    fun `an embedded flow step is not submitted without a clientId`() =
+        runTest {
+            embedded.initialize(embeddedConfig.copy(clientId = null), InMemoryStorageAdapter())
+            val step = EmbeddedSignInPayload(flowId = "e-1", inputs = mapOf("username" to "alice"))
+
+            assertRefused(ThunderIDErrorCode.INVALID_CONFIGURATION) {
+                embedded.signIn(step, EmbeddedFlowRequestConfig("app-id"))
+            }
+            assertRefused(ThunderIDErrorCode.INVALID_CONFIGURATION) { embedded.signUp(step) }
+            assertTrue(fake.requests.isEmpty())
+        }
+
+    @Test
+    fun `a flow step that does not complete stores no token`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            embedded.initialize(embeddedConfig, storage)
+            fake.on("POST", "$BASE/flow/execute", response(200, """{"executionId":"e-1","flowStatus":"INCOMPLETE"}"""))
+
+            embedded.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+
+            assertTrue(fake.to("$BASE/oauth2/token").isEmpty())
+            assertNull(TokenStore(storage).accessToken())
+            assertFalse(JsonParser.parseString(fake.requests.single().body).asJsonObject.has("ouId"))
+        }
+
+    @Test
+    fun `a completed sign-in keeps the step's session handles and the device secret`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            val store = TokenStore(storage)
+            embedded.initialize(embeddedConfig, storage)
+            store.save(TokenResponse(accessToken = "old", tokenType = "Bearer", deviceSecret = "ds-1"))
+            completeFlow(""","sessionData":[{"flowIdentifier":"f-1","sessionHandle":"h-1"}]""")
+            issueToken()
+
+            embedded.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
+
+            assertEquals(listOf(FlowSessionData("f-1", "h-1")), store.flowSessions())
+            assertEquals("ds-1", store.deviceSecret())
+        }
+
+    @Test
+    fun `a flow that completes without an assertion is not exchanged`() =
+        runTest {
+            val storage = InMemoryStorageAdapter()
+            embedded.initialize(embeddedConfig, storage)
+            fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE"}"""))
+
+            embedded.signUp()
+
+            assertTrue(fake.to("$BASE/oauth2/token").isEmpty())
+            assertNull(TokenStore(storage).accessToken())
+        }
 }

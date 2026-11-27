@@ -69,6 +69,17 @@ dependencies {
     // The real org.json, so a unit test can send a flow request the SDK encodes with it.
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
+
+    // ktlint-cli 1.8.0 pulls in logback 1.3.16. Move the ktlint tool classpath to the
+    // logback 1.5.x line. The SDK and playground classpaths do not depend on logback.
+    constraints {
+        add("ktlint", "ch.qos.logback:logback-classic:1.5.38") {
+            because("ktlint-cli 1.8.0 pulls in logback 1.3.16")
+        }
+        add("ktlint", "ch.qos.logback:logback-core:1.5.38") {
+            because("ktlint-cli 1.8.0 pulls in logback 1.3.16")
+        }
+    }
 }
 
 afterEvaluate {

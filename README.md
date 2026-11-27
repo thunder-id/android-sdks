@@ -69,6 +69,10 @@ When the document cannot be read, or leaves an endpoint out, the SDK uses the Th
 `baseUrl`, such as `{baseUrl}/oauth2/token`. Organization unit sign-in and the app native flows are
 ThunderID features.
 
+## App-native sign-in
+
+`SignIn(applicationId)` and `client.signIn(payload, request)` run the application's flow in the app. Set both `applicationId` and `clientId`: when a flow completes, the SDK exchanges its assertion at the token endpoint (`urn:ietf:params:oauth:grant-type:token-exchange`, no scope) for the access token it keeps, and keeps the assertion as the ID token. The application needs that grant type. Sign-in, sign-up and the embedded organization unit switch do not start a flow without a `clientId`. An application without the grant fails with `INVALID_CONFIGURATION`, and the previous session, if any, stays.
+
 ## Backend mode
 
 Set `endpoints.backend` to hand sign-in to a backend your application owns (the Backend for Frontend

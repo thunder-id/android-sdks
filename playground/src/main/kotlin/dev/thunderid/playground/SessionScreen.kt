@@ -211,8 +211,9 @@ private fun jwtMeta(
             String(android.util.Base64.decode(part, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP))
         }.getOrNull()
     val alg = header?.let { Regex("\"alg\"\\s*:\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
+    val typ = header?.let { Regex("\"typ\"\\s*:\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
     val decodes = runCatching { state.client.decodeJwtToken(token) }.isSuccess
-    return if (decodes) "JWT · ${alg ?: "unknown alg"}" else "opaque"
+    return if (decodes) "JWT · ${alg ?: "unknown alg"}${typ?.let { " · typ $it" }.orEmpty()}" else "opaque"
 }
 
 @Composable

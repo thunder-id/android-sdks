@@ -27,7 +27,7 @@ private const val EXPIRED_BODY = """{"code":"FES-1004","message":"Invalid reques
 class FlowExpiryTest {
     private val fake = FakeBackend()
     private val client = ThunderIDClient(fake)
-    private val config = ThunderIDConfig(baseUrl = SERVER, applicationId = "app-1")
+    private val config = ThunderIDConfig(baseUrl = SERVER, applicationId = "app-1", clientId = "client-1")
 
     private suspend inline fun assertFails(
         code: ThunderIDErrorCode,

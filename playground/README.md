@@ -71,7 +71,9 @@ went, loading, the translated error and `successMessage`. The group draws a veri
 ## Configure
 
 1. In the ThunderID Console, create a mobile application. Note its application ID and OAuth client
-   ID, and register `dev.thunderid.playground://callback` as a redirect URI.
+   ID, and register `dev.thunderid.playground://callback` as a redirect URI. For the app-native flow,
+   also give the client the `urn:ietf:params:oauth:grant-type:token-exchange` grant: the SDK exchanges
+   the flow's assertion for the access token.
 2. Copy the example config and fill in your values:
 
    ```bash
@@ -82,7 +84,7 @@ went, loading, the translated error and `successMessage`. The group draws a veri
    |---|---|
    | `THUNDERID_BASE_URL` | ThunderID server URL. The emulator reaches your machine's `localhost` at `10.0.2.2`, so a local server is `https://10.0.2.2:8090`. |
    | `THUNDERID_APPLICATION_ID` | Application ID for the app-native flow. |
-   | `THUNDERID_CLIENT_ID` | OAuth client ID for the browser sign-in and token refresh. |
+   | `THUNDERID_CLIENT_ID` | OAuth client ID for the browser sign-in, the app-native flow and token refresh. |
    | `THUNDERID_AFTER_SIGN_IN_URL` | Sign-in redirect URI. Its scheme is registered on the app, so changing it here is enough. |
    | `THUNDERID_AFTER_SIGN_OUT_URL` | Sign-out redirect URI. |
    | `THUNDERID_SCOPES` | Space separated scopes. Defaults to `openid profile email`. |

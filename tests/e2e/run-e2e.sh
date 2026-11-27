@@ -60,6 +60,8 @@ INSTALL_DIR="${INSTALL_DIR:-$SCRIPT_DIR/.thunderid-server}"
 
 # Must match the `id` in $CONFIG_FILE and the application ID the sample is built with.
 APP_ID="019e5b10-1001-7a2b-9c3d-4e5f60718293"
+# The OAuth client of that application, which exchanges the sign-in flow's assertion for a token.
+CLIENT_ID="mobile-quickstart-e2e"
 
 do_server=true
 do_build=true
@@ -356,6 +358,7 @@ build_sample() {
     cat > "$sample_dir/config.properties" <<PROPS
 THUNDERID_BASE_URL=https://10.0.2.2:8090
 THUNDERID_APPLICATION_ID=$APP_ID
+THUNDERID_CLIENT_ID=$CLIENT_ID
 THUNDERID_ATTESTATION_ENABLED=false
 THUNDERID_CLOUD_PROJECT_NUMBER=
 PROPS
@@ -381,6 +384,9 @@ run_flows() {
     else
         target=("${maestro_args[@]}")
     fi
+
+    # Discovery advertises localhost, and the embedded sign-in calls its token endpoint.
+    adb reverse tcp:8090 tcp:8090
 
     echo "==> Running Maestro"
     # The JUnit report is what makes a failed run readable without scraping the console log; it

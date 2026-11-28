@@ -84,6 +84,11 @@ class OrganizationUnitApiTest {
         store.save(TokenResponse(accessToken = jwt("sub" to "u1", "ouId" to "ou-old"), tokenType = "Bearer", refreshToken = "old-refresh"))
     }
 
+    /** Answers the exchange of a completed flow's assertion with [token]. */
+    private fun answerExchange(token: String = jwt("sub" to "u1")) {
+        fake.on("POST", "$BASE/oauth2/token", response(200, """{"access_token":"$token","token_type":"Bearer","expires_in":3600}"""))
+    }
+
     private fun answerUserInfo() {
         fake.on("GET", "$BASE/oauth2/userinfo", response(200, """{"sub":"u1"}"""))
     }
@@ -329,7 +334,9 @@ class OrganizationUnitApiTest {
             signedInBefore()
             answerUserInfo()
             val assertion = jwt("sub" to "u1", "ouId" to "ou-3")
+            val issued = jwt("sub" to "u1", "ouId" to "ou-3", "typ" to "at")
             fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE","assertion":"$assertion"}"""))
+            answerExchange(issued)
 
             val result = client.switchOrganizationUnit("ou-3")
 
@@ -338,7 +345,8 @@ class OrganizationUnitApiTest {
             assertEquals("app-id", body["applicationId"].asString)
             assertEquals("AUTHENTICATION", body["flowType"].asString)
             assertTrue(result is OrganizationUnitSwitchResult.Switched)
-            assertEquals(assertion, store.accessToken())
+            assertEquals(issued, store.accessToken())
+            assertEquals(assertion, store.idToken())
             assertNull(store.refreshToken())
             assertEquals("ou-3", client.getCurrentOrganizationUnit()?.id)
             assertFalse(body.has("sessionData"))
@@ -363,8 +371,9 @@ class OrganizationUnitApiTest {
             // The continuation carries no ouId, and completing it replaces the session.
             val assertion = jwt("sub" to "u1", "ouId" to "ou-3")
             fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE","assertion":"$assertion"}"""))
+            answerExchange()
             client.signIn(EmbeddedSignInPayload(flowId = "e-1", inputs = mapOf("password" to "x")), EmbeddedFlowRequestConfig("app-id"))
-            assertFalse(JsonParser.parseString(fake.requests.last().body).asJsonObject.has("ouId"))
+            assertFalse(JsonParser.parseString(fake.to("$BASE/flow/execute").last().body).asJsonObject.has("ouId"))
             assertNull(store.refreshToken())
         }
 
@@ -426,15 +435,29 @@ class OrganizationUnitApiTest {
     }
 
     @Test
-    fun `an embedded sign-in without a unit keeps the earlier refresh token as before`() =
+    fun `an embedded sign-in without a unit sends no ouId and replaces the earlier session`() =
         runTest {
             client.initialize(config, storage)
             signedInBefore()
             fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE","assertion":"${jwt("sub" to "u1")}"}"""))
+            answerExchange()
 
             client.signIn(EmbeddedSignInPayload(), EmbeddedFlowRequestConfig("app-id"))
 
-            assertFalse(JsonParser.parseString(fake.requests.single().body).asJsonObject.has("ouId"))
+            assertFalse(JsonParser.parseString(fake.to("$BASE/flow/execute").single().body).asJsonObject.has("ouId"))
+            assertNull(store.refreshToken())
+        }
+
+    @Test
+    fun `an embedded switch whose exchange is refused fails and keeps the session`() =
+        runTest {
+            client.initialize(config, storage)
+            signedInBefore()
+            fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE","assertion":"${jwt("sub" to "u1")}"}"""))
+            fake.on("POST", "$BASE/oauth2/token", response(400, """{"error":"unauthorized_client"}"""))
+
+            assertFails(ThunderIDErrorCode.INVALID_CONFIGURATION) { client.switchOrganizationUnit("ou-3") }
+
             assertEquals("old-refresh", store.refreshToken())
         }
 
@@ -453,6 +476,7 @@ class OrganizationUnitApiTest {
 
     private fun answerEmbeddedSwitch() {
         fake.on("POST", "$BASE/flow/execute", response(200, """{"flowStatus":"COMPLETE","assertion":"${jwt("sub" to "u1")}"}"""))
+        answerExchange()
     }
 
     private fun refuseDeviceSecret(
@@ -626,17 +650,15 @@ class OrganizationUnitApiTest {
         }
 
     @Test
-    fun `a device secret is not exchanged without a client id`() =
+    fun `without a client id neither the device secret is exchanged nor the embedded flow started`() =
         runTest {
             client.initialize(config.copy(clientId = null), storage)
             signedInWithDeviceSecret()
-            answerUserInfo()
             answerEmbeddedSwitch()
 
-            client.switchOrganizationUnit("ou-3")
+            assertFails(ThunderIDErrorCode.INVALID_CONFIGURATION) { client.switchOrganizationUnit("ou-3") }
 
-            assertTrue(fake.to("$BASE/ou/ou-3/oauth2/token").isEmpty())
-            assertEquals(1, fake.to("$BASE/flow/execute").size)
+            assertTrue(fake.requests.isEmpty())
             assertEquals("ds-1", store.deviceSecret())
         }
 
@@ -647,6 +669,7 @@ class OrganizationUnitApiTest {
         runTest {
             client.initialize(config, storage)
             answerUserInfo()
+            answerExchange()
             fake.on(
                 "POST",
                 "$BASE/flow/execute",

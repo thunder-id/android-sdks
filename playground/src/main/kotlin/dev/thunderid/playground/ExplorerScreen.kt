@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import dev.thunderid.android.User
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.account.BaseUserAvatar
+import dev.thunderid.compose.components.account.ChangeCredential
 import dev.thunderid.compose.components.account.UserAvatar
 import dev.thunderid.compose.components.account.UserProfile
 import dev.thunderid.compose.components.account.VerifyAttribute
@@ -371,6 +372,21 @@ private fun StoryPreview(
                 attribute = props["attribute"] as? String ?: "email",
                 flowHandle = props["flowHandle"] as? String ?: "",
             )
+        }
+
+        "credential" -> {
+            val attribute = props["attribute"] as? String ?: "password"
+            if (!LocalThunderID.current.isSignedIn) {
+                Text("Sign in to change your own credentials", color = Pg.TextMuted, fontSize = 13.sp)
+            } else {
+                key(attribute) {
+                    // A step-up refusal signs the user in again inside the component and retries once.
+                    ChangeCredential(
+                        attribute = attribute,
+                        onSuccess = { EventLog.ok("changeCredential:success", attribute) },
+                    )
+                }
+            }
         }
 
         "language" -> {

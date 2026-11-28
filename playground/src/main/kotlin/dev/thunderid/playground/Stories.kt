@@ -181,6 +181,18 @@ val ComponentSpecs: List<ComponentSpec> =
             },
         ),
         ComponentSpec(
+            id = "credential",
+            group = "User",
+            name = "ChangeCredential",
+            controls = listOf(Control.Choice("attribute", listOf("password", "pin"))),
+            defaults = mapOf("attribute" to "password"),
+            stories = listOf(Story("live", "Live change", emptyMap())),
+            code = { _, props ->
+                "ChangeCredential(\n    attribute = ${quote(props.text("attribute"))},\n" +
+                    "    onSuccess = { /* changed */ },\n)"
+            },
+        ),
+        ComponentSpec(
             id = "language",
             group = "Presentation",
             name = "LanguageSwitcher",

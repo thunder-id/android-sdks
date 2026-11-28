@@ -55,6 +55,9 @@ internal object PtPtStrings {
             "userProfile.cancel" to "Cancelar",
             "userProfile.error.load" to "Falha ao carregar o perfil.",
             "userProfile.error.save" to "Falha ao guardar as alterações.",
+            "reauthentication.differentUser" to
+                "Iniciou sessão com outra conta. Inicie sessão com a sua conta e tente novamente.",
+            "userProfile.reauthentication.error" to "Inicie sessão novamente para guardar esta alteração.",
             "userProfile.validation.required" to "Este campo é obrigatório.",
             "userProfile.validation.pattern" to "Este valor não é válido.",
             "userProfile.verification.verified" to "Verificado",
@@ -86,6 +89,13 @@ internal object PtPtStrings {
                 "Ocorreu um erro ao actualizar o seu {credentialLower}. Tente novamente.",
             "changeCredential.unavailable" to "Alteração de {credentialLower} indisponível",
             "changeCredential.unavailable.description" to "Contacte o seu administrador.",
+            "changeCredential.current.label" to "{credential} actual",
+            "changeCredential.current.placeholder" to "Introduza o seu {credentialLower} actual",
+            "changeCredential.current.hint" to "Deixe em branco se ainda não definiu um.",
+            "changeCredential.current.required.error" to "Introduza o seu {credentialLower} actual.",
+            "changeCredential.current.invalid.error" to "O {credentialLower} actual está incorrecto.",
+            "changeCredential.reauthentication.error" to
+                "Inicie sessão novamente para definir o seu {credentialLower}.",
             "organization.unnamed" to "Organização sem nome",
             "organizationList.empty" to "Nenhuma organização",
             "organizationSwitcher.empty" to "Nenhuma organização",

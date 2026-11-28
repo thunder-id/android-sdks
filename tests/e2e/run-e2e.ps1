@@ -78,6 +78,8 @@ $InstallDir = Get-EnvOrDefault 'INSTALL_DIR' (Join-Path $ScriptDir '.thunderid-s
 
 # Must match the `id` in $ConfigFile and the application ID the sample is built with.
 $AppId = '019e5b10-1001-7a2b-9c3d-4e5f60718293'
+# The OAuth client of that application, which exchanges the sign-in flow's assertion for a token.
+$ClientId = 'mobile-quickstart-e2e'
 
 # Every call goes to a host with a self-signed certificate.
 $PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
@@ -308,6 +310,7 @@ function Build-Sample {
     @(
         'THUNDERID_BASE_URL=https://10.0.2.2:8090'
         "THUNDERID_APPLICATION_ID=$AppId"
+        "THUNDERID_CLIENT_ID=$ClientId"
         'THUNDERID_ATTESTATION_ENABLED=false'
         'THUNDERID_CLOUD_PROJECT_NUMBER='
     ) | Set-Content -Path (Join-Path $SampleDir 'config.properties') -Encoding utf8
@@ -331,6 +334,10 @@ function Invoke-Flows {
     }
     # Default to the whole suite when no flow path was passed through.
     $target = if ($MaestroArgs) { $MaestroArgs } else { @('flows/') }
+
+    # Discovery advertises localhost, and the embedded sign-in calls its token endpoint.
+    & adb reverse tcp:8090 tcp:8090
+    if ($LASTEXITCODE -ne 0) { throw "adb reverse failed with exit code $LASTEXITCODE." }
 
     Write-Host '==> Running Maestro'
     Push-Location $ScriptDir

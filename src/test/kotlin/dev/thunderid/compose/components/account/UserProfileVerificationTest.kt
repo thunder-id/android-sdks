@@ -4,6 +4,7 @@
 package dev.thunderid.compose.components.account
 
 import dev.thunderid.android.AttributeSchema
+import dev.thunderid.android.AuthenticationChallenge
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDErrorCode
@@ -11,6 +12,7 @@ import dev.thunderid.android.UserProfile
 import dev.thunderid.android.VerifiedAttribute
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -106,6 +108,97 @@ class UserProfileVerificationTest {
             assertEquals(rejected.message, state.fieldError("email"))
             assertTrue(state.isEditing("email"))
             assertNull(state.verifyingField)
+        }
+
+    // ── Step-up retry ───────────────────────────────────────────────────────
+
+    private val stepUpRefusal =
+        IAMException(
+            ThunderIDErrorCode.STEP_UP_REQUIRED,
+            "Recent authentication required",
+            authenticationChallenge = AuthenticationChallenge(error = "insufficient_user_authentication", maxAge = 300),
+        )
+
+    private val reauthI18n =
+        ThunderIDI18n(bundles = mapOf("en-US" to mapOf("userProfile.reauthentication.error" to "Sign in again.")))
+
+    @Test
+    fun `a new email refused for an old sign-in is saved after one re-sign-in`() =
+        runTest {
+            val state = profileState(stored("old@example.com"))
+            state.type("email", "new@example.com")
+            val client = mockk<ThunderIDClient>()
+            val payloads = mutableListOf<Map<String, Any>>()
+            coEvery { client.updateUserProfile(any()) } coAnswers {
+                payloads += firstArg<Map<String, Any>>()
+                if (payloads.size == 1) throw stepUpRefusal
+                stored("new@example.com")
+            }
+            val maxAges = mutableListOf<Int?>()
+            val reauthenticate: Reauthenticator = { maxAge ->
+                maxAges += maxAge
+                true
+            }
+
+            val saved =
+                saveProfileField(state, state.field("email"), "new@example.com", client, reauthI18n, reauthenticate) { state.store(it) }
+
+            assertTrue(saved)
+            assertEquals(listOf<Int?>(300), maxAges)
+            assertEquals(2, payloads.size)
+            assertEquals(payloads[0], payloads[1])
+            assertEquals("new@example.com", state.field("email").rawValue)
+        }
+
+    @Test
+    fun `a second refusal or a failed re-sign-in shows the sign-in-again message on the field`() =
+        runTest {
+            for (signedInAgain in listOf(true, false)) {
+                val state = profileState(stored("old@example.com"))
+                state.type("email", "new@example.com")
+                val client = mockk<ThunderIDClient>()
+                var calls = 0
+                coEvery { client.updateUserProfile(any()) } coAnswers {
+                    calls++
+                    throw stepUpRefusal
+                }
+
+                val saved =
+                    saveProfileField(state, state.field("email"), "new@example.com", client, reauthI18n, { signedInAgain }) {
+                        state.store(it)
+                    }
+
+                assertFalse(saved)
+                assertEquals(if (signedInAgain) 2 else 1, calls)
+                assertEquals("Sign in again.", state.fieldError("email"))
+                assertTrue(state.isEditing("email"))
+            }
+        }
+
+    @Test
+    fun `an app that signs in again itself gets the max age and no built-in retry`() =
+        runTest {
+            val state = profileState(stored("old@example.com"))
+            state.type("email", "new@example.com")
+            val client = mockk<ThunderIDClient>()
+            coEvery { client.updateUserProfile(any()) } throws stepUpRefusal
+            var requested: Int? = null
+
+            val saved =
+                saveProfileField(
+                    state,
+                    state.field("email"),
+                    "new@example.com",
+                    client,
+                    reauthI18n,
+                    reauthenticate = null,
+                    onReauthenticationRequired = { requested = it },
+                ) { state.store(it) }
+
+            assertFalse(saved)
+            assertEquals(300, requested)
+            assertEquals("Sign in again.", state.fieldError("email"))
+            coVerify(exactly = 1) { client.updateUserProfile(any()) }
         }
 
     // ── Status follows the stored value through a save ──────────────────────

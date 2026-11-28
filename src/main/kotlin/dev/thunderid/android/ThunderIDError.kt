@@ -30,6 +30,13 @@ enum class ThunderIDErrorCode(
     INVALID_GRANT("INVALID_GRANT"),
     CONSENT_REQUIRED("CONSENT_REQUIRED"),
 
+    /**
+     * The operation needs a more recent sign-in (a `401` with `error="insufficient_user_authentication"`, or the
+     * server code `AUTH-4011`). [IAMException.authenticationChallenge] carries `maxAge`. Sign in again with
+     * [ThunderIDClient.reauthenticate] and retry.
+     */
+    STEP_UP_REQUIRED("STEP_UP_REQUIRED"),
+
     /** The embedded flow execution expired, or already ended, so the server refused the step. The flow has to start again. */
     FLOW_EXPIRED("FLOW_EXPIRED"),
 
@@ -85,14 +92,104 @@ enum class ThunderIDErrorCode(
  *
  * @property serverError The error envelope the server returned with a failed request, when its body was
  *   one: the server's own error code, and its message and description with their translation keys and
- *   parameters. Use it to show a message specific to the server's code.
+ *   parameters. Use it to show a message specific to the server's code. The exception's message carries
+ *   the envelope's [ServerError.readableMessage] when it has one.
+ * @property authenticationChallenge Set on a `401` that asks for a more recent sign-in, whose code is then
+ *   [ThunderIDErrorCode.STEP_UP_REQUIRED]. The operation itself does not sign in again or retry.
  */
 open class IAMException(
     val code: ThunderIDErrorCode,
     message: String,
     cause: Throwable? = null,
     val serverError: ServerError? = null,
+    val authenticationChallenge: AuthenticationChallenge? = null,
 ) : Exception("[$code] $message", cause)
+
+/** A re-sign-in that another account completed. The session stays as it was. */
+internal class AnotherAccountSignedInException : IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "Another user signed in")
+
+/** Whether a re-sign-in failed because another account signed in. The session stays as it was. */
+val IAMException.isReauthenticationByAnotherAccount: Boolean
+    get() = this is AnotherAccountSignedInException
+
+/**
+ * A `401` that asks for a more recent sign-in (RFC 9470): the server's `WWW-Authenticate: Bearer` challenge
+ * with `error="insufficient_user_authentication"`. Sign the user in again with [ThunderIDClient.reauthenticate]
+ * and retry.
+ *
+ * @property error The challenge's `error`, `insufficient_user_authentication`.
+ * @property errorDescription The challenge's `error_description`, when sent.
+ * @property maxAge The challenge's `max_age`: the sign-in must be at most this many seconds old.
+ */
+data class AuthenticationChallenge(
+    val error: String,
+    val errorDescription: String? = null,
+    val maxAge: Int? = null,
+) {
+    companion object {
+        /** The `error` of a challenge that asks for a more recent sign-in. */
+        const val INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication"
+
+        /** The server's code for a sign-in older than the operation allows. */
+        const val RECENT_AUTHENTICATION_REQUIRED_CODE = "AUTH-4011"
+
+        private val SCHEME = Regex("""(?i)(?:^|[\s,])Bearer(?:\s+|$)""")
+        private val PARAM = Regex("""([A-Za-z0-9_!#$%&'*+.^`|~-]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,]*))""")
+
+        /**
+         * Reads the challenge from a `401` response: from its `WWW-Authenticate` header, else from the
+         * body's `description.params.maxAge` when the server's code is `AUTH-4011`. Returns `null` when the
+         * response does not ask for a more recent sign-in.
+         */
+        fun from(
+            wwwAuthenticate: String?,
+            serverError: ServerError?,
+        ): AuthenticationChallenge? =
+            parse(wwwAuthenticate)
+                ?: serverError?.takeIf { it.code == RECENT_AUTHENTICATION_REQUIRED_CODE }?.let {
+                    AuthenticationChallenge(
+                        error = INSUFFICIENT_USER_AUTHENTICATION,
+                        maxAge =
+                            it.description
+                                ?.params
+                                ?.get("maxAge")
+                                ?.toNonNegativeInt(),
+                    )
+                }
+
+        /**
+         * Reads a `WWW-Authenticate` header value, or returns `null` when it has no `Bearer` challenge with
+         * `error="insufficient_user_authentication"`.
+         */
+        fun parse(wwwAuthenticate: String?): AuthenticationChallenge? {
+            if (wwwAuthenticate.isNullOrBlank()) return null
+            val start =
+                SCHEME
+                    .find(wwwAuthenticate)
+                    ?.range
+                    ?.last
+                    ?.plus(1) ?: return null
+            // Reads the Bearer challenge's parameters up to the next scheme.
+            val rest = wwwAuthenticate.substring(start)
+            val params = mutableMapOf<String, String>()
+            var end = 0
+            for (match in PARAM.findAll(rest)) {
+                if (rest.substring(end, match.range.first).any { it != ',' && !it.isWhitespace() }) break
+                val quoted = match.groups[2]?.value?.replace(Regex("""\\(.)"""), "$1")
+                params.putIfAbsent(match.groupValues[1].lowercase(), quoted ?: match.groupValues[3])
+                end = match.range.last + 1
+            }
+            val error = params["error"]?.takeIf { it == INSUFFICIENT_USER_AUTHENTICATION } ?: return null
+            return AuthenticationChallenge(
+                error = error,
+                errorDescription = params["error_description"]?.takeIf { it.isNotEmpty() },
+                maxAge = params["max_age"]?.toNonNegativeInt(),
+            )
+        }
+
+        private fun String.toNonNegativeInt(): Int? = trim().toIntOrNull()?.takeIf { it >= 0 }
+    }
+}
 
 /**
  * A localizable message in a server error: its translation key, its English text, and the values its
@@ -115,6 +212,12 @@ data class ServerError(
     val message: ServerErrorMessage? = null,
     val description: ServerErrorMessage? = null,
 ) {
+    /** The envelope's English text: the message's `defaultValue`, else the description's. */
+    val readableMessage: String?
+        get() =
+            message?.defaultValue?.takeIf { it.isNotBlank() }
+                ?: description?.defaultValue?.takeIf { it.isNotBlank() }
+
     companion object {
         /**
          * Reads the server's error envelope from a raw response body, or returns `null` when the body is

@@ -65,6 +65,75 @@ class ServerErrorTest {
     }
 
     @Test
+    fun `readableMessage is the message's default value, else the description's`() {
+        val both = ServerError("X-1", ServerErrorMessage(defaultValue = "Message"), ServerErrorMessage(defaultValue = "Description"))
+        assertEquals("Message", both.readableMessage)
+        assertEquals("Description", ServerError("X-1", description = ServerErrorMessage(defaultValue = "Description")).readableMessage)
+        assertNull(ServerError("X-1", ServerErrorMessage(key = "k")).readableMessage)
+    }
+
+    // ── AuthenticationChallenge ─────────────────────────────────────────────
+
+    @Test
+    fun `parses a recent sign-in challenge from WWW-Authenticate`() {
+        val challenge =
+            AuthenticationChallenge.parse(
+                "Bearer error=\"insufficient_user_authentication\", " +
+                    "error_description=\"A more recent authentication is required\", max_age=\"300\"",
+            )
+
+        assertEquals(
+            AuthenticationChallenge(
+                error = "insufficient_user_authentication",
+                errorDescription = "A more recent authentication is required",
+                maxAge = 300,
+            ),
+            challenge,
+        )
+    }
+
+    @Test
+    fun `parses a challenge with unquoted values, any scheme case, and no max_age`() {
+        assertEquals(
+            AuthenticationChallenge(error = "insufficient_user_authentication", maxAge = 60),
+            AuthenticationChallenge.parse("bearer realm=\"api\",error=insufficient_user_authentication,max_age=60"),
+        )
+        assertEquals(
+            AuthenticationChallenge(error = "insufficient_user_authentication"),
+            AuthenticationChallenge.parse("Bearer error=\"insufficient_user_authentication\", max_age=\"soon\""),
+        )
+    }
+
+    @Test
+    fun `has no challenge for another error or scheme`() {
+        assertNull(AuthenticationChallenge.parse("Bearer error=\"invalid_token\", max_age=\"300\""))
+        assertNull(AuthenticationChallenge.parse("Basic realm=\"api\""))
+        assertNull(AuthenticationChallenge.parse(""))
+        assertNull(AuthenticationChallenge.parse(null))
+    }
+
+    @Test
+    fun `falls back to the body's maxAge for AUTH-4011 only`() {
+        val recent =
+            ServerError(
+                code = "AUTH-4011",
+                description = ServerErrorMessage(defaultValue = "Authenticate again", params = mapOf("maxAge" to "300")),
+            )
+
+        assertEquals(
+            AuthenticationChallenge(error = "insufficient_user_authentication", maxAge = 300),
+            AuthenticationChallenge.from(null, recent),
+        )
+        assertNull(AuthenticationChallenge.from(null, recent.copy(code = "AUTH-4010")))
+        assertNull(AuthenticationChallenge.from(null, null))
+        // The header wins over the body.
+        assertEquals(
+            120,
+            AuthenticationChallenge.from("Bearer error=\"insufficient_user_authentication\", max_age=\"120\"", recent)?.maxAge,
+        )
+    }
+
+    @Test
     fun `a failed request carries the envelope and keeps the SDK's code`() =
         runTest {
             val body = """{"code":"USR-1027","message":{"defaultValue":"User cannot be deleted"}}"""
@@ -100,4 +169,20 @@ class ServerErrorTest {
             val message = runCatching { client.users.delete("u-1") }.exceptionOrNull()?.message.orEmpty()
             assertTrue(message, message.endsWith("User cannot be deleted"))
         }
+
+    @Test
+    fun `reads only the Bearer challenge's parameters when other challenges follow`() {
+        assertEquals(
+            AuthenticationChallenge(error = "insufficient_user_authentication", maxAge = 300),
+            AuthenticationChallenge.parse(
+                "Bearer error=\"insufficient_user_authentication\", max_age=300, Bearer error=\"invalid_token\"",
+            ),
+        )
+        assertEquals(
+            AuthenticationChallenge(error = "insufficient_user_authentication"),
+            AuthenticationChallenge.parse(
+                "Bearer error=\"insufficient_user_authentication\", DPoP error_description=\"x\", max_age=0",
+            ),
+        )
+    }
 }

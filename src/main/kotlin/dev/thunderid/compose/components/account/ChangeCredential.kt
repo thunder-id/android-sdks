@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -51,9 +52,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.thunderid.android.AuthenticationChallenge
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.R
+import dev.thunderid.android.ThunderIDClient
 import dev.thunderid.android.ThunderIDErrorCode
+import dev.thunderid.android.isReauthenticationByAnotherAccount
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.components.exposeTestTagsAsResourceIds
 import dev.thunderid.compose.i18n.ThunderIDI18n
@@ -61,6 +65,7 @@ import kotlinx.coroutines.launch
 
 /** The form field a credential-update failure belongs to. */
 enum class CredentialField {
+    CURRENT,
     NEW,
     FORM,
 }
@@ -68,10 +73,8 @@ enum class CredentialField {
 /**
  * The derived state a change-credential form needs to render and to gate submission.
  *
- * Mirrors the JavaScript SDK's `evaluateChangePasswordForm`: there is deliberately no
- * current-value field to evaluate. The self-service credential write endpoint does not verify
- * the account's existing value today, so collecting one would only teach the user a false sense
- * of security.
+ * The current value is optional, so a user who has not set the credential yet can set a first one,
+ * and it is not part of this evaluation. The server checks it when the user holds the credential.
  */
 data class CredentialFormEvaluation(
     val confirmMatches: Boolean,
@@ -111,12 +114,76 @@ internal fun evaluateCredentialForm(
     )
 }
 
-/** Maps a failure from the credential write path onto the field that caused it. `400` is the new value failing a server-side check. */
-internal fun mapCredentialError(code: ThunderIDErrorCode): CredentialField =
-    when (code) {
-        ThunderIDErrorCode.INVALID_INPUT -> CredentialField.NEW
+internal const val CURRENT_CREDENTIAL_REQUIRED = "USR-1047"
+internal const val INVALID_CURRENT_CREDENTIAL = "USR-1048"
+
+/**
+ * Maps a failure from the credential write path onto the field that caused it: the server's current-value
+ * codes to the current field, a recent sign-in request to the form, and any other `400` to the new value.
+ */
+internal fun mapCredentialError(
+    code: ThunderIDErrorCode,
+    serverCode: String? = null,
+): CredentialField =
+    when {
+        serverCode == CURRENT_CREDENTIAL_REQUIRED || serverCode == INVALID_CURRENT_CREDENTIAL -> CredentialField.CURRENT
+        serverCode == AuthenticationChallenge.RECENT_AUTHENTICATION_REQUIRED_CODE -> CredentialField.FORM
+        code == ThunderIDErrorCode.INVALID_INPUT -> CredentialField.NEW
         else -> CredentialField.FORM
     }
+
+/** A credential-update failure resolved for display. */
+internal data class CredentialError(
+    val field: CredentialField,
+    val message: String,
+    val reauthenticationRequired: Boolean = false,
+    val maxAge: Int? = null,
+)
+
+/**
+ * Resolves [error] to the field and text the form shows. [translate] resolves a change-credential key with
+ * the credential substituted. A failure the form has no key for shows the server's message, else the generic
+ * text.
+ */
+internal fun resolveCredentialError(
+    error: IAMException,
+    translate: (String) -> String,
+): CredentialError {
+    if (error.isReauthenticationByAnotherAccount) {
+        return CredentialError(field = CredentialField.FORM, message = translate("reauthentication.differentUser"))
+    }
+    val serverCode = error.serverError?.code
+    val challenge = error.authenticationChallenge
+    if (challenge != null || serverCode == AuthenticationChallenge.RECENT_AUTHENTICATION_REQUIRED_CODE) {
+        return CredentialError(
+            field = CredentialField.FORM,
+            message = translate("changeCredential.reauthentication.error"),
+            reauthenticationRequired = true,
+            maxAge = challenge?.maxAge,
+        )
+    }
+    val field = mapCredentialError(error.code, serverCode)
+    val message =
+        when (serverCode) {
+            CURRENT_CREDENTIAL_REQUIRED -> translate("changeCredential.current.required.error")
+            INVALID_CURRENT_CREDENTIAL -> translate("changeCredential.current.invalid.error")
+            else -> error.serverError?.readableMessage ?: translate("changeCredential.generic.error")
+        }
+    return CredentialError(field = field, message = message)
+}
+
+/**
+ * Captures the form's values now, so a retry after a re-sign-in sends the same ones: the current value only
+ * when the user filled it in, so a user without the credential can set a first one.
+ */
+internal fun ChangeCredentialState.request(
+    client: ThunderIDClient,
+    attribute: String,
+): suspend () -> Unit {
+    val newValue = newValue
+    val currentValue = currentValue.ifEmpty { null }
+    return { client.updateUserCredentials(attribute = attribute, newValue = newValue, currentValue = currentValue) }
+}
 
 /** Substitutes `{credential}` / `{credentialLower}` into a translation template. */
 internal fun substituteCredential(
@@ -144,6 +211,9 @@ class ChangeCredentialState(
 ) {
     var credentialDisplayName by mutableStateOf(credentialDisplayName)
         internal set
+
+    /** The credential's current value. Optional: leave it empty when the user has not set one yet. */
+    var currentValue by mutableStateOf("")
     var newValue by mutableStateOf("")
     var confirmValue by mutableStateOf("")
 
@@ -161,6 +231,12 @@ class ChangeCredentialState(
     internal val fieldErrors = mutableStateMapOf<CredentialField, String>()
     internal var onSubmit: () -> Unit = {}
 
+    internal fun clearValues() {
+        currentValue = ""
+        newValue = ""
+        confirmValue = ""
+    }
+
     val evaluation: CredentialFormEvaluation
         get() = evaluateCredentialForm(newValue, confirmValue, regex)
 
@@ -173,6 +249,16 @@ class ChangeCredentialState(
  * Headless change-credential form. Holds the network call, the schema-derived policy and the error
  * routing, and hands its [ChangeCredentialState] to a caller-supplied builder, mirroring the
  * [BaseUserProfile] split.
+ *
+ * The server checks the current value when the user holds the credential: a missing or wrong one shows on
+ * [CredentialField.CURRENT]. Setting a first value needs a recent sign-in. When the server asks for one, the
+ * form signs the user in again with the server's maximum sign-in age, in the browser for a redirect session
+ * (the host Activity hands the redirect to [dev.thunderid.android.api.auth.FederatedAuthSession.onRedirect]) or
+ * by running the application's flow again for an app-native one, then submits the same values once more. A
+ * second refusal, or a re-sign-in that fails, is cancelled or signs in another user, shows a sign-in-again
+ * message. Set [onReauthenticationRequired] to sign the user in yourself instead: the form then shows that
+ * message and calls it with the maximum sign-in age in seconds, when sent. When sign-in runs on a backend, the
+ * form only shows the message.
  */
 @Composable
 fun BaseChangeCredential(
@@ -182,12 +268,15 @@ fun BaseChangeCredential(
     policyRegex: String? = null,
     onSuccess: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
+    onReauthenticationRequired: ((maxAge: Int?) -> Unit)? = null,
     content: @Composable (ChangeCredentialState) -> Unit,
 ) {
     val thunderState = LocalThunderID.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val displayName = credentialDisplayName ?: titleCaseCredential(attribute)
     val state = remember(attribute) { ChangeCredentialState(displayName) }
+    val stepUp = remember { StepUpState() }
 
     fun submit() {
         if (!state.evaluation.isValid || state.loading || state.unavailable) return
@@ -197,17 +286,15 @@ fun BaseChangeCredential(
             state.success = false
             state.loading = true
             try {
-                thunderState.client.updateUserCredentials(
-                    attribute = attribute,
-                    newValue = state.newValue,
-                )
-                state.newValue = ""
-                state.confirmValue = ""
+                val reauthenticate = stepUp.reauthenticator(thunderState, context, onReauthenticationRequired)
+                withStepUp(reauthenticate, state.request(thunderState.client, attribute))
+                state.clearValues()
                 state.success = true
                 onSuccess?.invoke()
             } catch (e: IAMException) {
-                applyCredentialError(state, e, thunderState.i18n)
+                val error = applyCredentialError(state, e, thunderState.i18n)
                 onError?.invoke()
+                if (error.reauthenticationRequired) onReauthenticationRequired?.invoke(error.maxAge)
             } catch (e: Exception) {
                 state.error =
                     e.message
@@ -233,23 +320,25 @@ fun BaseChangeCredential(
     }
 
     Box(modifier = modifier) { content(state) }
+    StepUpSignIn(
+        stepUp = stepUp,
+        message = translateCredential(thunderState.i18n, state.credentialDisplayName, "changeCredential.reauthentication.error"),
+        cancelLabel = thunderState.i18n.resolve("userProfile.cancel"),
+    )
 }
 
 private fun applyCredentialError(
     state: ChangeCredentialState,
     error: IAMException,
     i18n: ThunderIDI18n,
-) {
-    fun translate(key: String): String = translateCredential(i18n, state.credentialDisplayName, key)
-    when (mapCredentialError(error.code)) {
-        CredentialField.NEW -> {
-            state.fieldErrors[CredentialField.NEW] = translate("changeCredential.generic.error")
-        }
-
-        CredentialField.FORM -> {
-            state.error = translate("changeCredential.generic.error")
-        }
+): CredentialError {
+    val resolved = resolveCredentialError(error) { key -> translateCredential(i18n, state.credentialDisplayName, key) }
+    if (resolved.field == CredentialField.FORM) {
+        state.error = resolved.message
+    } else {
+        state.fieldErrors[resolved.field] = resolved.message
     }
+    return resolved
 }
 
 /**
@@ -268,12 +357,14 @@ fun ChangeCredential(
     modifier: Modifier = Modifier,
     attribute: String = "password",
     onSuccess: (() -> Unit)? = null,
+    onReauthenticationRequired: ((maxAge: Int?) -> Unit)? = null,
 ) {
     val i18n = LocalThunderID.current.i18n
     BaseChangeCredential(
         modifier = modifier,
         attribute = attribute,
         onSuccess = onSuccess,
+        onReauthenticationRequired = onReauthenticationRequired,
     ) { state ->
         fun translate(key: String): String = translateCredential(i18n, state.credentialDisplayName, key)
         var expanded by remember { mutableStateOf(false) }
@@ -316,8 +407,7 @@ fun ChangeCredential(
                 state = state,
                 i18n = i18n,
                 onDismiss = {
-                    state.newValue = ""
-                    state.confirmValue = ""
+                    state.clearValues()
                     expanded = false
                 },
             )
@@ -402,6 +492,28 @@ private fun ChangeCredentialDialog(
                             )
 
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val currentError = state.fieldError(CredentialField.CURRENT)
+                                CredentialSecureField(
+                                    label = translate("changeCredential.current.label"),
+                                    value = state.currentValue,
+                                    onValueChange = { state.currentValue = it },
+                                    isError = currentError != null,
+                                    testTag = "thunderid-field-currentCredential",
+                                    placeholder = translate("changeCredential.current.placeholder"),
+                                )
+                                Text(
+                                    currentError ?: translate("changeCredential.current.hint"),
+                                    color =
+                                        if (currentError != null) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 CredentialSecureField(
                                     label = translate("changeCredential.new.label"),
                                     value = state.newValue,
@@ -478,12 +590,14 @@ private fun CredentialSecureField(
     onValueChange: (String) -> Unit,
     isError: Boolean,
     testTag: String,
+    placeholder: String? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
+        placeholder = placeholder?.let { text -> @Composable { Text(text) } },
         singleLine = true,
         isError = isError,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),

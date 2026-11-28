@@ -62,10 +62,38 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.net.URLDecoder
+import java.security.SecureRandom
+import java.util.Base64
 
 /** OAuth errors that mean the server needs the user, so a switch on a backend signs in through the browser. */
 private val INTERACTION_ERRORS =
     setOf("interaction_required", "login_required", "consent_required", "account_selection_required")
+
+/** How a session signs in again after a step-up refusal. */
+enum class ReauthenticationMethod {
+    /** In the browser, with [ThunderIDClient.reauthenticate]: a session from a redirect sign-in. */
+    BROWSER,
+
+    /** By running the sign-in flow again with [EmbeddedFlowRequestConfig.reauthentication]: an app-native session. */
+    FLOW,
+
+    /** Not in the app: sign-in runs on a backend, or the configuration cannot run either. */
+    UNAVAILABLE,
+}
+
+/** Authorization request parameters the SDK sets itself, which [SignInOptions.extra] cannot override. */
+private val SDK_AUTHORIZATION_PARAMETERS =
+    setOf(
+        "response_type",
+        "client_id",
+        "redirect_uri",
+        "scope",
+        "code_challenge",
+        "code_challenge_method",
+        "state",
+        "nonce",
+        "request_uri",
+    )
 
 /**
  * ThunderID Android SDK client — Platform layer implementation of the full IAMClient interface (spec §7.1).
@@ -92,8 +120,6 @@ class ThunderIDClient internal constructor(
     /** The organization unit the redirect sign-in in progress is bounded to, for redeeming its code. */
     private var pendingOrganizationUnitId: String? = null
 
-    /** Whether the embedded flow in progress was started for an organization unit, so it replaces the session. */
-    private var boundedFlowInProgress = false
     private val pkceManager = PKCEManager()
     private var loading = false
     private var currentUser: User? = null
@@ -338,6 +364,10 @@ class ThunderIDClient internal constructor(
 
     // MARK: - Authentication
 
+    /**
+     * Runs one step of the application's sign-in flow in the app. Needs `clientId`: a completed flow's assertion
+     * is exchanged for the access token, and kept as the ID token.
+     */
     suspend fun signIn(
         payload: EmbeddedSignInPayload,
         request: EmbeddedFlowRequestConfig,
@@ -351,6 +381,15 @@ class ThunderIDClient internal constructor(
     ): EmbeddedFlowResponse {
         requireInitialized()
         refuseOnBackend("Embedded sign-in")
+        requireEmbeddedClientId()
+        // Read before any request, so the flow is checked against the user signed in when it started.
+        val reauthenticating = request.reauthentication && request.flowType == FlowType.AUTHENTICATION
+        val signedInSubject =
+            if (reauthenticating) {
+                sessionSubject() ?: throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "Nobody is signed in")
+            } else {
+                null
+            }
         loading = true
         return try {
             val response =
@@ -358,19 +397,20 @@ class ThunderIDClient internal constructor(
                     flowClient!!.submit(payload.flowId, payload.actionId, payload.inputs, payload.challengeToken)
                 } else {
                     val unit = request.organizationUnitId.takeIf { request.flowType == FlowType.AUTHENTICATION }
-                    boundedFlowInProgress = unit != null
                     mapOrganizationUnitRefusal(unit) {
                         flowClient!!.initiate(
                             request.applicationId,
                             request.flowType,
                             attestationToken(),
                             unit,
-                            sessionData = sessionData,
+                            // The kept handles let the server read when the user last signed in.
+                            sessionData = if (reauthenticating) tokenStore?.flowSessions() else sessionData,
+                            maxAge = if (reauthenticating) (request.maxAge ?: 0).coerceAtLeast(0) else null,
                         )
                     }
                 }
-            tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
-            establishSessionIfNeeded(response)
+            trackReauthentication(payload.flowId, signedInSubject, response)
+            keepFlowStep(response)
             response
         } finally {
             loading = false
@@ -417,10 +457,7 @@ class ThunderIDClient internal constructor(
                 "scope" to cfg.scopes.joinToString(" "),
                 "code_challenge" to challenge,
                 "code_challenge_method" to "S256",
-                options?.prompt?.let { "prompt" to it },
-                options?.loginHint?.let { "login_hint" to it },
-                options?.fidp?.let { "fidp" to it },
-            )
+            ) + callerParameters(options)
         return "${oauthClient!!.authorizeUrl(unit)}?${encodeQuery(params)}"
     }
 
@@ -450,9 +487,7 @@ class ThunderIDClient internal constructor(
                 put("scope", cfg.scopes.joinToString(" "))
                 put("code_challenge", challenge)
                 put("code_challenge_method", "S256")
-                options.prompt?.let { put("prompt", it) }
-                options.loginHint?.let { put("login_hint", it) }
-                options.fidp?.let { put("fidp", it) }
+                callerParameters(options).forEach { (name, value) -> put(name, value) }
             }
         val requestUri = oauth.pushAuthorizationRequest(form)
         pendingOrganizationUnitId = unit
@@ -460,6 +495,181 @@ class ThunderIDClient internal constructor(
     }
 
     suspend fun handleRedirectCallback(url: String): User = completeRedirect(url, switching = false)
+
+    /** The authorization parameters [options] adds, without overriding the ones the SDK sets itself. */
+    private fun callerParameters(options: SignInOptions?): List<Pair<String, String>> {
+        if (options == null) return emptyList()
+        val named =
+            listOfNotNull(
+                options.prompt?.let { "prompt" to it },
+                options.loginHint?.let { "login_hint" to it },
+                options.fidp?.let { "fidp" to it },
+                options.maxAge?.let { "max_age" to it.toString() },
+            )
+        val taken = SDK_AUTHORIZATION_PARAMETERS + named.map { it.first }
+        return named + options.extra.filterKeys { it !in taken }.map { (name, value) -> name to value.toString() }
+    }
+
+    /**
+     * Signs the signed-in user in again in the browser, for an operation that refused with
+     * [ThunderIDErrorCode.STEP_UP_REQUIRED], then returns the user. Retry the operation afterwards.
+     *
+     * The authorization request carries the configured scopes, PKCE (S256), `state`, `nonce`, `max_age` set to
+     * [maxAge] (`prompt=login` when [maxAge] is `null`) and the session's ID token as `id_token_hint`. The code
+     * is redeemed, the new ID token is validated with its `nonce`, and its `sub` must be the signed-in user's.
+     * Only then are the session's tokens replaced; on any failure the session stays as it was. It never refreshes
+     * the tokens, since a refreshed token keeps the original sign-in time.
+     *
+     * @param browser Opens the URL and returns the URL the browser came back to, as for
+     * [SwitchOrganizationUnitOptions.browser]; [dev.thunderid.android.api.auth.customTabBrowser] makes one from a
+     * Custom Tab.
+     * @throws IAMException [ThunderIDErrorCode.AUTHENTICATION_FAILED] when nobody is signed in, the server
+     * refuses the sign-in, the `state` or `nonce` does not match, or another user signs in;
+     * [ThunderIDErrorCode.INVALID_CONFIGURATION] without `clientId` or `afterSignInUrl`;
+     * [ThunderIDErrorCode.UNSUPPORTED_OPERATION] when sign-in runs on a backend. An app-native session signs in
+     * again by running its flow with [EmbeddedFlowRequestConfig.reauthentication] instead.
+     */
+    suspend fun reauthenticate(
+        maxAge: Int?,
+        browser: suspend (url: String) -> String,
+    ): User {
+        val cfg = requireConfig()
+        refuseOnBackend("Re-authentication")
+        val clientId = cfg.clientId ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "clientId required")
+        val redirectUri =
+            cfg.afterSignInUrl ?: throw IAMException(ThunderIDErrorCode.INVALID_CONFIGURATION, "afterSignInUrl required")
+        val subject =
+            sessionSubject() ?: throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "Nobody is signed in")
+        val oauth = oauthClient!!
+        val (verifier, challenge) = PKCEManager().generate()
+        val state = randomToken()
+        val nonce = randomToken()
+        val params =
+            buildMap<String, String> {
+                put("response_type", "code")
+                put("client_id", clientId)
+                put("redirect_uri", redirectUri)
+                put("scope", (listOf("openid") + cfg.scopes).distinct().joinToString(" "))
+                put("code_challenge", challenge)
+                put("code_challenge_method", "S256")
+                put("state", state)
+                put("nonce", nonce)
+                if (maxAge != null) put("max_age", maxAge.toString()) else put("prompt", "login")
+                tokenStore?.idToken()?.let { put("id_token_hint", it) }
+            }
+        val push = cfg.pushedAuthorizationRequests || oauth.metadata()?.requirePushedAuthorizationRequests == true
+        val url =
+            if (push) {
+                val requestUri = oauth.pushAuthorizationRequest(params)
+                "${oauth.authorizeUrl(null)}?" + encodeQuery(listOf("client_id" to clientId, "request_uri" to requestUri))
+            } else {
+                "${oauth.authorizeUrl(null)}?${encodeQuery(params.toList())}"
+            }
+        val callback = queryParameters(browser(url))
+        if (callback["state"] != state) {
+            throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "The sign-in state does not match")
+        }
+        callback["error"]?.let { error ->
+            val serverError = ServerError(error, callback["error_description"]?.let { ServerErrorMessage(defaultValue = it) })
+            throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "The sign-in was refused: $error", serverError = serverError)
+        }
+        val code =
+            callback["code"]?.takeIf { it.isNotEmpty() }
+                ?: throw IAMException(ThunderIDErrorCode.INVALID_GRANT, "Authorization code missing from callback URL")
+        val form =
+            mapOf(
+                "grant_type" to "authorization_code",
+                "code" to code,
+                "client_id" to clientId,
+                "redirect_uri" to redirectUri,
+                "code_verifier" to verifier,
+            )
+        val tokens = oauth.redeemCode(null, form)
+        val idToken =
+            tokens.idToken ?: throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "The sign-in returned no ID token")
+        tokenValidator?.validate(idToken, nonce)
+        val claims =
+            jwtClaims(idToken) ?: throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "Malformed ID token")
+        if (claims["nonce"] != nonce) {
+            throw IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, "ID token nonce mismatch")
+        }
+        if (claims["sub"] != subject) {
+            throw anotherUserSignedIn()
+        }
+        tokenStore!!.replace(tokens)
+        currentUser = null
+        return getUser()
+    }
+
+    /**
+     * How the signed-in session signs in again after [ThunderIDErrorCode.STEP_UP_REQUIRED]: in the browser for a
+     * redirect session, by running the application's flow again for an app-native one, and not at all when
+     * sign-in runs on a backend.
+     */
+    fun reauthenticationMethod(): ReauthenticationMethod {
+        val cfg = config ?: return ReauthenticationMethod.UNAVAILABLE
+        return when {
+            backend != null -> {
+                ReauthenticationMethod.UNAVAILABLE
+            }
+
+            tokenStore?.isEmbeddedSignIn() == true -> {
+                if (cfg.applicationId != null && cfg.clientId != null) ReauthenticationMethod.FLOW else ReauthenticationMethod.UNAVAILABLE
+            }
+
+            tokenStore?.idToken() != null && cfg.clientId != null && cfg.afterSignInUrl != null -> {
+                ReauthenticationMethod.BROWSER
+            }
+
+            cfg.applicationId != null -> {
+                ReauthenticationMethod.FLOW
+            }
+
+            else -> {
+                ReauthenticationMethod.UNAVAILABLE
+            }
+        }
+    }
+
+    /** The user each re-sign-in flow in progress must sign in again, by execution ID. */
+    private val reauthenticationSubjects = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * Remembers who a re-sign-in flow must sign in, from the step that starts it ([startSubject]), and when a
+     * step completes such a flow, whatever config it is sent with, requires its assertion to name that user
+     * before the assertion is exchanged or the session touched. A step that does not complete keeps the entry,
+     * since the server keeps the execution after an error step.
+     */
+    private fun trackReauthentication(
+        submittedFlowId: String?,
+        startSubject: String?,
+        response: EmbeddedFlowResponse,
+    ) {
+        val expected = submittedFlowId?.let { reauthenticationSubjects[it] } ?: startSubject ?: return
+        val flowId = submittedFlowId ?: response.flowId
+        if (response.flowStatus != FlowStatus.COMPLETE) {
+            flowId?.let { reauthenticationSubjects[it] = expected }
+            return
+        }
+        flowId?.let { reauthenticationSubjects.remove(it) }
+        val assertion = response.assertion?.takeIf { it.isNotEmpty() } ?: return
+        if (jwtClaims(assertion)?.get("sub") != expected) throw anotherUserSignedIn()
+    }
+
+    private fun anotherUserSignedIn(): IAMException = AnotherAccountSignedInException()
+
+    /** The signed-in user's `sub`, from the session's ID token, else its access token or flow assertion. */
+    private fun sessionSubject(): String? {
+        val store = tokenStore ?: return null
+        return listOfNotNull(store.idToken(), store.accessToken())
+            .firstNotNullOfOrNull { token -> (jwtClaims(token)?.get("sub") as? String)?.takeIf { it.isNotEmpty() } }
+    }
+
+    private fun randomToken(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
 
     private suspend fun completeRedirect(
         url: String,
@@ -594,8 +804,8 @@ class ThunderIDClient internal constructor(
      *   `invalid_grant` is dropped, and any refusal but an unavailable unit goes on to the next path.
      * - With [SwitchOrganizationUnitOptions.browser], a redirect sign-in through the browser.
      * - Otherwise the application's `AUTHENTICATION` flow in embedded mode, presenting the SSO session handles
-     *   kept from earlier flow steps. It returns [OrganizationUnitSwitchResult.SignInRequired] when the flow
-     *   needs the user.
+     *   kept from earlier flow steps, and exchanges the assertion of the completed flow (needs `clientId`). It
+     *   returns [OrganizationUnitSwitchResult.SignInRequired] when the flow needs the user.
      *
      * @throws IAMException [ThunderIDErrorCode.ORGANIZATION_UNIT_UNAVAILABLE] when the unit does not exist
      * or the application cannot be used from it; the server does not tell the two apart.
@@ -868,6 +1078,7 @@ class ThunderIDClient internal constructor(
         backend?.let { backend ->
             return try {
                 currentUser = null
+                reauthenticationSubjects.clear()
                 backend.signOut() ?: config?.afterSignOutUrl ?: "/"
             } finally {
                 loading = false
@@ -881,6 +1092,7 @@ class ThunderIDClient internal constructor(
                 runCatching { oauthClient!!.revoke(body) }
             }
             tokenStore?.clear()
+            reauthenticationSubjects.clear()
             currentUser = null
             config?.afterSignOutUrl ?: "/"
         } finally {
@@ -947,12 +1159,14 @@ class ThunderIDClient internal constructor(
 
     // MARK: - Registration
 
+    /** Runs one step of the sign-up flow. Needs `clientId`; a flow that completes with an assertion signs in. */
     suspend fun signUp(
         payload: EmbeddedSignInPayload? = null,
         request: EmbeddedFlowRequestConfig? = null,
     ): EmbeddedFlowResponse {
         requireInitialized()
         refuseOnBackend("Embedded sign-up")
+        requireEmbeddedClientId()
         val appId = request?.applicationId ?: config?.applicationId ?: ""
         val response =
             if (payload?.flowId != null) {
@@ -960,8 +1174,8 @@ class ThunderIDClient internal constructor(
             } else {
                 flowClient!!.initiate(appId, request?.flowType ?: FlowType.REGISTRATION, attestationToken())
             }
-        tokenStore?.updateFlowSessions(response.sessionData, response.clearedSessions)
-        establishSessionIfNeeded(response)
+        trackReauthentication(payload?.flowId, null, response)
+        keepFlowStep(response)
         return response
     }
 
@@ -1010,6 +1224,7 @@ class ThunderIDClient internal constructor(
     fun clearSession() {
         backend?.clear()
         tokenStore?.clear()
+        reauthenticationSubjects.clear()
         currentUser = null
     }
 
@@ -1028,9 +1243,16 @@ class ThunderIDClient internal constructor(
             return User(session.user.orEmpty()).also { currentUser = it }
         }
         tokenStore?.accessToken()?.let { token ->
-            val claims = runCatching { decodeJwtToken(token) }.getOrNull()
-            if (claims != null && !(claims["sub"] as? String).isNullOrEmpty()) {
-                val user = User(claims.filterValues { it != null }.mapValues { it.value as Any })
+            var claims = runCatching { decodeJwtToken(token) }.getOrNull()
+            val sub = claims?.get("sub") as? String
+            if (claims != null && !sub.isNullOrEmpty()) {
+                // The ID token fills in claims the access token lacks, such as the user's name after an app-native sign-in.
+                tokenStore
+                    ?.idToken()
+                    ?.let { runCatching { decodeJwtToken(it) }.getOrNull() }
+                    ?.takeIf { it["sub"] == sub }
+                    ?.let { claims = it + claims!! }
+                val user = User(claims!!.filterValues { it != null }.mapValues { it.value as Any })
                 currentUser = user
                 return user
             }
@@ -1053,23 +1275,50 @@ class ThunderIDClient internal constructor(
         return httpClient!!.get<UsersMeMetaResponse>("/users/me/meta").schema
     }
 
+    /**
+     * Updates the signed-in user's own attributes via `PUT /users/me`.
+     *
+     * @throws IAMException [ThunderIDErrorCode.STEP_UP_REQUIRED], with [IAMException.authenticationChallenge],
+     * when the change needs a more recent sign-in, such as a new `email` or `mobile` type attribute. Sign in again
+     * with [reauthenticate] and send the change again.
+     */
     suspend fun updateUserProfile(payload: Map<String, Any>): UserProfile {
         requireInitialized()
         return httpClient!!.put("/users/me", mapOf("attributes" to payload))
     }
 
     /**
-     * Changes one of the signed-in user's own credentials via `POST /users/me/update-credentials`.
+     * Sets one of the signed-in user's own credentials, such as the password, via
+     * `POST /users/me/update-credentials` with `{name, currentValue, newValue}`.
      *
-     * The self-service write path does not verify the account's existing value today, so this
-     * call collects only the new value, matching the React/Vue SDKs.
+     * When the user holds the credential, the server checks [currentValue] against it. When the user does not
+     * hold it yet, [currentValue] is not needed, and the server asks for a recent sign-in instead. Replacing a
+     * credential the user holds revokes the user's tokens, including the one that made the request.
+     *
+     * @param attribute The credential's name on the user type, `password` by default.
+     * @param newValue The value to set.
+     * @param currentValue The credential's current value. Sent only when not empty.
+     * @throws IAMException [ThunderIDErrorCode.INVALID_INPUT] without sending anything when [attribute] is
+     * blank or [newValue] is empty. A server refusal carries the server's code in [IAMException.serverError]:
+     * `USR-1047` (current value missing) and `USR-1048` (current value does not match), or `AUTH-4011`
+     * ([ThunderIDErrorCode.STEP_UP_REQUIRED], with [IAMException.authenticationChallenge]) when the
+     * sign-in is too old to set a first value.
      */
     suspend fun updateUserCredentials(
         attribute: String = "password",
         newValue: String,
+        currentValue: String? = null,
     ) {
         requireInitialized()
-        httpClient!!.post<Unit>("/users/me/update-credentials", mapOf("attributes" to mapOf(attribute to newValue)))
+        if (attribute.isBlank()) throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "The credential name is required")
+        if (newValue.isEmpty()) throw IAMException(ThunderIDErrorCode.INVALID_INPUT, "The new value is required")
+        val body =
+            buildMap<String, Any> {
+                put("name", attribute)
+                if (!currentValue.isNullOrEmpty()) put("currentValue", currentValue)
+                put("newValue", newValue)
+            }
+        httpClient!!.post<Unit>("/users/me/update-credentials", body)
     }
 
     // MARK: - Self user attribute verification
@@ -1316,20 +1565,69 @@ class ThunderIDClient internal constructor(
         return cfg.attestationTokenProvider?.invoke()
     }
 
-    private fun establishSessionIfNeeded(response: EmbeddedFlowResponse) {
-        val assertion = response.assertion
-        if (response.flowStatus != FlowStatus.COMPLETE || assertion.isNullOrEmpty()) {
+    /** The `clientId` an embedded flow needs to exchange its assertion; checked before each flow request. */
+    private fun requireEmbeddedClientId(): String =
+        config?.clientId?.takeIf { it.isNotEmpty() }
+            ?: throw IAMException(
+                ThunderIDErrorCode.INVALID_CONFIGURATION,
+                "clientId is required for embedded sign-in and sign-up, next to applicationId",
+            )
+
+    /**
+     * Keeps a flow step's SSO session handles and, when the step completes with an assertion, replaces the
+     * session with the token the assertion is exchanged for. When the exchange fails, the previous session stays
+     * and the step's new handles are dropped, so the next attempt runs the flow again.
+     */
+    private suspend fun keepFlowStep(response: EmbeddedFlowResponse) {
+        val store = tokenStore!!
+        val assertion = response.assertion?.takeIf { response.flowStatus == FlowStatus.COMPLETE && it.isNotEmpty() }
+        if (assertion == null) {
+            store.updateFlowSessions(response.sessionData, response.clearedSessions)
             return
         }
-        val tokens = TokenResponse(accessToken = assertion, tokenType = "Bearer")
-        // A flow bounded to an organization unit replaces the whole session, as a switch must.
-        if (boundedFlowInProgress) tokenStore!!.replace(tokens) else tokenStore!!.save(tokens)
-        boundedFlowInProgress = false
-        try {
-            val claims = decodeJwtToken(assertion)
-            currentUser = User(claims.filterValues { it != null }.mapValues { it.value as Any })
-        } catch (_: Exception) {
-            // assertion is stored; user info will be fetched via getUser() on next access
-        }
+        // Handle expiry counts from the step's response, not from after the exchange.
+        val receivedAt = System.currentTimeMillis()
+        val tokens =
+            try {
+                exchangeFlowAssertion(assertion)
+            } catch (e: Throwable) {
+                store.updateFlowSessions(null, response.clearedSessions)
+                throw e
+            }
+        store.updateFlowSessions(response.sessionData, response.clearedSessions, receivedAt)
+        store.replace(tokens)
+        store.markEmbeddedSignIn()
+        currentUser = null
+    }
+
+    /**
+     * Exchanges a completed flow's [assertion] for an access token at the token endpoint (RFC 8693), with no
+     * scope: the token carries what the flow granted. The assertion is kept as the ID token.
+     */
+    private suspend fun exchangeFlowAssertion(assertion: String): TokenResponse {
+        val form =
+            mapOf(
+                "grant_type" to TOKEN_EXCHANGE_GRANT,
+                "client_id" to requireEmbeddedClientId(),
+                "subject_token" to assertion,
+                "subject_token_type" to "urn:ietf:params:oauth:token-type:jwt",
+            )
+        val response =
+            try {
+                oauthClient!!.requestToken(null, form, "The flow assertion exchange was refused")
+            } catch (e: IAMException) {
+                if (e.serverError?.code != "unauthorized_client") throw e
+                throw IAMException(
+                    ThunderIDErrorCode.INVALID_CONFIGURATION,
+                    "An embedded sign-in needs the $TOKEN_EXCHANGE_GRANT grant type on the application",
+                    e,
+                    e.serverError,
+                )
+            }
+        return response.copy(idToken = assertion)
+    }
+
+    internal companion object {
+        private const val TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
     }
 }

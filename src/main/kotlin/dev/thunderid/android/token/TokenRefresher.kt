@@ -46,7 +46,7 @@ internal class TokenRefresher(
                 )
             // Form-encoded at the bare token endpoint: a refresh token from a bounded sign-in carries its unit.
             val response: TokenResponse = oauthClient.requestToken(null, body, "The token refresh was refused")
-            tokenStore.save(response)
+            tokenStore.save(response, refreshed = true)
             response
         }
 }

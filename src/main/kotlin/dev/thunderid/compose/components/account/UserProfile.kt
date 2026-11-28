@@ -45,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -56,10 +57,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.thunderid.android.AttributeSchema
 import dev.thunderid.android.AttributeVerification
+import dev.thunderid.android.IAMException
 import dev.thunderid.android.R
 import dev.thunderid.android.ThunderIDClient
+import dev.thunderid.android.ThunderIDErrorCode
 import dev.thunderid.android.User
 import dev.thunderid.android.UserProfile
+import dev.thunderid.android.isReauthenticationByAnotherAccount
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.i18n.ThunderIDI18n
 import kotlinx.coroutines.CancellationException
@@ -304,6 +308,10 @@ internal fun deepMergeAttributes(
  * Saves [field] as [value] and applies the profile the server stored. The field stays in editing until
  * then, so while the save is in flight, and after it fails, the typed value shows no verification status
  * and no verify action. After a save, the user can select Verify for an eligible unverified contact.
+ *
+ * When the server asks for a more recent sign-in, [reauthenticate] signs the user in again and the same change
+ * is sent once more. A step-up refusal that remains shows a sign-in-again message and calls
+ * [onReauthenticationRequired].
  */
 internal suspend fun saveProfileField(
     state: UserProfileState,
@@ -311,15 +319,30 @@ internal suspend fun saveProfileField(
     value: String,
     client: ThunderIDClient,
     i18n: ThunderIDI18n = ThunderIDI18n(),
+    reauthenticate: Reauthenticator? = null,
+    onReauthenticationRequired: ((maxAge: Int?) -> Unit)? = null,
     applyProfile: (UserProfile) -> Unit,
 ): Boolean {
     val fieldPayload = buildUpdatePayload(field.name, value, field.isMultiValued)
     val currentAttributes = state.profile?.attributes ?: emptyMap()
+    val payload = deepMergeAttributes(currentAttributes, fieldPayload)
     val updated =
         try {
-            client.updateUserProfile(deepMergeAttributes(currentAttributes, fieldPayload))
+            withStepUp(reauthenticate) { client.updateUserProfile(payload) }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: IAMException) {
+            if (e.isReauthenticationByAnotherAccount) {
+                state.fieldErrors[field.name] = i18n.resolve("reauthentication.differentUser")
+                return false
+            }
+            if (e.code != ThunderIDErrorCode.STEP_UP_REQUIRED) {
+                state.fieldErrors[field.name] = e.message ?: i18n.resolve("userProfile.error.save")
+                return false
+            }
+            state.fieldErrors[field.name] = i18n.resolve("userProfile.reauthentication.error")
+            onReauthenticationRequired?.invoke(e.authenticationChallenge?.maxAge)
+            return false
         } catch (e: Exception) {
             state.fieldErrors[field.name] = e.message ?: i18n.resolve("userProfile.error.save")
             return false
@@ -422,6 +445,7 @@ fun UserProfile(
     onSaved: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
     verificationFlowHandle: String = AttributeVerification.DEFAULT_FLOW_HANDLE,
+    onReauthenticationRequired: ((maxAge: Int?) -> Unit)? = null,
 ) {
     val thunderState = LocalThunderID.current
     val i18n = thunderState.i18n
@@ -430,6 +454,7 @@ fun UserProfile(
         attributeMapping = attributeMapping,
         onSaved = onSaved,
         onError = onError,
+        onReauthenticationRequired = onReauthenticationRequired,
     ) { state ->
         val editingField = state.fields.firstOrNull { state.isEditing(it.name) }
         Column(
@@ -752,19 +777,31 @@ private fun ComplexValueView(value: Map<*, *>) {
     }
 }
 
-/** Unstyled base variant (spec §8.3). */
+/**
+ * Unstyled base variant (spec §8.3).
+ *
+ * A change the server accepts only after a recent sign-in, such as a new email or mobile number, signs the user
+ * in again with the server's maximum sign-in age, in the browser for a redirect session or by running the
+ * application's flow again for an app-native one, then sends the same change once more. A second refusal, or a
+ * re-sign-in that fails, is cancelled or signs in another user, shows a sign-in-again message on the field. Set
+ * [onReauthenticationRequired] to sign the user in yourself instead; it receives the maximum sign-in age in
+ * seconds, when sent. When sign-in runs on a backend, the field only shows the message.
+ */
 @Composable
 fun BaseUserProfile(
     modifier: Modifier = Modifier,
     attributeMapping: Map<String, List<String>> = emptyMap(),
     onSaved: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
+    onReauthenticationRequired: ((maxAge: Int?) -> Unit)? = null,
     content: @Composable (UserProfileState) -> Unit,
 ) {
     val thunderState = LocalThunderID.current
     val i18n = thunderState.i18n
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state = remember { UserProfileState() }
+    val stepUp = remember { StepUpState() }
     var schema by remember { mutableStateOf<Map<String, AttributeSchema>>(emptyMap()) }
 
     fun applyProfile(
@@ -814,7 +851,17 @@ fun BaseUserProfile(
         scope.launch {
             state.isLoading = true
             try {
-                val saved = saveProfileField(state, field, value, thunderState.client, i18n) { applyProfile(schema, it) }
+                val reauthenticate = stepUp.reauthenticator(thunderState, context, onReauthenticationRequired)
+                val saved =
+                    saveProfileField(
+                        state,
+                        field,
+                        value,
+                        thunderState.client,
+                        i18n,
+                        reauthenticate,
+                        onReauthenticationRequired,
+                    ) { applyProfile(schema, it) }
                 if (saved) onSaved?.invoke() else onError?.invoke()
             } finally {
                 state.isLoading = false
@@ -860,4 +907,9 @@ fun BaseUserProfile(
     CompositionLocalProvider(LocalVerifiedProfileSink provides { state.verificationFinished(it) }) {
         Box(modifier = modifier) { content(state) }
     }
+    StepUpSignIn(
+        stepUp = stepUp,
+        message = i18n.resolve("userProfile.reauthentication.error"),
+        cancelLabel = i18n.resolve("userProfile.cancel"),
+    )
 }

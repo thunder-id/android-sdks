@@ -28,8 +28,9 @@ internal class FlowExecutionClient(
         organizationUnitId: String? = null,
         inputs: Map<String, String>? = null,
         sessionData: List<FlowSessionData>? = null,
+        maxAge: Int? = null,
     ): EmbeddedFlowResponse {
-        val body = initiateBody(applicationId, flowType, organizationUnitId, inputs, sessionData)
+        val body = initiateBody(applicationId, flowType, organizationUnitId, inputs, sessionData, maxAge)
         return httpClient
             .post<EmbeddedFlowResponse>("/flow/execute", body, requiresAuth = false, headers = attestationTokenHeaders(attestationToken))
             .withErrorAsFailureReason()
@@ -128,6 +129,7 @@ internal class FlowExecutionClient(
         organizationUnitId: String? = null,
         inputs: Map<String, String>? = null,
         sessionData: List<FlowSessionData>? = null,
+        maxAge: Int? = null,
     ): Map<String, Any> {
         val body =
             mutableMapOf<String, Any>(
@@ -137,6 +139,8 @@ internal class FlowExecutionClient(
             )
         if (organizationUnitId != null && flowType == FlowType.AUTHENTICATION) body["ouId"] = organizationUnitId
         if (inputs != null) body["inputs"] = inputs
+        // Asks for a sign-in no older than this many seconds; only a request that starts AUTHENTICATION takes it.
+        if (maxAge != null && flowType == FlowType.AUTHENTICATION) body["maxAge"] = maxAge
         val sessions =
             sessionData.orEmpty().mapNotNull { session ->
                 val id = session.flowIdentifier?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null

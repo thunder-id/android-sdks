@@ -110,9 +110,15 @@ data class TokenResponse(
 /**
  * Options for a redirect-mode sign-in.
  *
+ * @property maxAge Sent as `max_age`: the most seconds since the user last authenticated that the server may
+ * accept before it asks the user to authenticate again.
+ * @property extra Further authorization request parameters, such as `id_token_hint`. A parameter the SDK sets
+ * itself (`response_type`, `client_id`, `redirect_uri`, `scope`, the PKCE pair, `state`, `nonce`) or one of
+ * the named options above is not overridden.
  * @property organizationUnitId Bounds the sign-in to this organization unit: the user signs in to it at
  * `{baseUrl}/ou/{organizationUnitId}/oauth2/authorize`, and the code is redeemed at the unit's token
- * endpoint. When sign-in runs on a backend, it goes to the backend's sign-in endpoint as `ouId`.
+ * endpoint. When sign-in runs on a backend, it goes to the backend's sign-in endpoint as `ouId`, and the
+ * other options are not sent.
  */
 data class SignInOptions(
     val prompt: String? = null,
@@ -120,6 +126,7 @@ data class SignInOptions(
     val fidp: String? = null,
     val extra: Map<String, Any> = emptyMap(),
     val organizationUnitId: String? = null,
+    val maxAge: Int? = null,
 )
 
 data class SignUpOptions(
@@ -149,11 +156,20 @@ data class EmbeddedSignInPayload(
 /**
  * @property organizationUnitId Bounds an `AUTHENTICATION` flow to this organization unit. It is sent as
  * `ouId` on the request that starts the flow, never on a continuation.
+ * @property reauthentication Signs the signed-in user in again, for an operation that refused with
+ * [ThunderIDErrorCode.STEP_UP_REQUIRED]. The `AUTHENTICATION` flow starts with [maxAge] and the kept SSO session
+ * handles, and the client remembers who it must sign in: whichever step completes the flow, its assertion
+ * replaces the session only when its `sub` is the signed-in user's. Otherwise the step fails with
+ * [ThunderIDErrorCode.AUTHENTICATION_FAILED] and the session stays as it was.
+ * @property maxAge With [reauthentication]: how recent, in seconds, the sign-in must be; `0` (always ask) when
+ * `null`. The server asks the user again when the sign-in is older.
  */
 data class EmbeddedFlowRequestConfig(
     val applicationId: String,
     val flowType: FlowType = FlowType.AUTHENTICATION,
     val organizationUnitId: String? = null,
+    val reauthentication: Boolean = false,
+    val maxAge: Int? = null,
 )
 
 enum class FlowType(

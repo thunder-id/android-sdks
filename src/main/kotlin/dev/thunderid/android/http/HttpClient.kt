@@ -3,6 +3,7 @@
 
 package dev.thunderid.android.http
 
+import dev.thunderid.android.AuthenticationChallenge
 import dev.thunderid.android.IAMException
 import dev.thunderid.android.ServerError
 import dev.thunderid.android.ThunderIDErrorCode
@@ -196,7 +197,13 @@ internal class HttpClient(
                         connection.errorStream?.bufferedReader()?.readText() ?: ""
                     }
                 }.getOrDefault("")
-            ThunderIDHttpResponse(statusCode, responseBody)
+            val responseHeaders =
+                buildMap<String, String> {
+                    connection.headerFields.forEach { (name, values) ->
+                        if (name != null) put(name, values.joinToString(", "))
+                    }
+                }
+            ThunderIDHttpResponse(statusCode, responseBody, responseHeaders)
         }
 
     private fun handleResponse(
@@ -209,13 +216,12 @@ internal class HttpClient(
         // The server's error envelope, when the body is one, rides on every error so a caller can map the
         // server's own code. The SDK's codes below stay what they were.
         val serverError = ServerError.parse(response.body)
-        val (code, message) =
+        val (code, fallbackMessage) =
             when (statusCode) {
                 400 -> {
                     val msg =
-                        serverError?.message?.defaultValue
-                            ?: runCatching { JSONObject(response.body).optString("message", "Bad request") }
-                                .getOrDefault("Bad request")
+                        runCatching { JSONObject(response.body).optString("message", "Bad request") }
+                            .getOrDefault("Bad request")
                     ThunderIDErrorCode.INVALID_INPUT to msg
                 }
 
@@ -243,7 +249,14 @@ internal class HttpClient(
                     ThunderIDErrorCode.UNKNOWN_ERROR to "Unexpected status: $statusCode"
                 }
             }
-        throw IAMException(code, message, serverError = serverError)
+        val challenge =
+            if (statusCode == 401) AuthenticationChallenge.from(response.header("WWW-Authenticate"), serverError) else null
+        throw IAMException(
+            if (challenge != null) ThunderIDErrorCode.STEP_UP_REQUIRED else code,
+            serverError?.readableMessage ?: fallbackMessage,
+            serverError = serverError,
+            authenticationChallenge = challenge,
+        )
     }
 
     @PublishedApi

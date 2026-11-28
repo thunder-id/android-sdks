@@ -1,0 +1,17 @@
+appId: dev.thunderid.Quickstart
+---
+# Goes back to the home screen from Manage Account and signs out.
+- tapOn: "Home"
+- retry:
+    maxRetries: 2
+    commands:
+      - scrollUntilVisible:
+          element: "Sign out"
+          direction: DOWN
+          timeout: 20000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn: "Sign out"
+- extendedWaitUntil:
+    visible: "Get started"
+    timeout: 20000

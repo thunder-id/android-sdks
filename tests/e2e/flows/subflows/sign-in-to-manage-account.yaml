@@ -1,0 +1,48 @@
+appId: dev.thunderid.Quickstart
+---
+# Signs USERNAME in with PASSWORD from the landing screen and opens the Manage Account screen.
+- tapOn: "Sign in"
+
+# The credentials step is rendered from the flow definition the server returns, not from static
+# native views. The SDK tags each input with the field's identifier and each button with the
+# action's ref, so these ids track the server's flow response.
+#
+# Compose keeps testTag inside its own semantics tree, so these ids are only visible to Maestro
+# because the SDK opts the subtree in via testTagsAsResourceId.
+- extendedWaitUntil:
+    visible:
+      id: "thunderid-field-username"
+    timeout: 25000
+
+- tapOn:
+    id: "thunderid-field-username"
+- inputText: ${USERNAME}
+
+- tapOn:
+    id: "thunderid-field-password"
+- inputText: ${PASSWORD}
+
+- tapOn:
+    id: "thunderid-action-action_001"
+
+- extendedWaitUntil:
+    visible: "Session active"
+    timeout: 30000
+
+# See signin.yaml's equivalent comment: the home screen's own recomposition (a live "expires in"
+# countdown) can reset the scroll position in the gap between scrollUntilVisible finding an
+# element and the tap landing, so this is wrapped in a retry.
+- retry:
+    maxRetries: 2
+    commands:
+      - scrollUntilVisible:
+          element: "Manage Account"
+          direction: DOWN
+          timeout: 20000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn: "Manage Account"
+
+- extendedWaitUntil:
+    visible: "Change Password"
+    timeout: 20000

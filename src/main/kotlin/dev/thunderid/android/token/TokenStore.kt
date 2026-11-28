@@ -17,6 +17,7 @@ private object StoreKey {
     const val SCOPE = "thunder.scope"
     const val DEVICE_SECRET = "thunder.device_secret"
     const val FLOW_SESSIONS = "thunder.flow_sessions"
+    const val EMBEDDED_SIGN_IN = "thunder.embedded_sign_in"
 }
 
 /** An SSO session handle kept from an app-native flow step. [expiresAt] is in epoch milliseconds. */
@@ -33,7 +34,13 @@ internal data class StoredFlowSession(
 internal class TokenStore(
     private val storage: StorageAdapter,
 ) {
-    fun save(response: TokenResponse) {
+    /** Saves [response]. A [refreshed] response keeps the embedded sign-in mark. */
+    fun save(
+        response: TokenResponse,
+        refreshed: Boolean = false,
+    ) {
+        // Tokens from the token endpoint end a session from an embedded sign-in flow, unless they refresh it.
+        if (!refreshed) storage.delete(StoreKey.EMBEDDED_SIGN_IN)
         storage.store(StoreKey.ACCESS_TOKEN, response.accessToken)
         response.refreshToken?.let { storage.store(StoreKey.REFRESH_TOKEN, it) }
         response.idToken?.let { storage.store(StoreKey.ID_TOKEN, it) }
@@ -55,6 +62,15 @@ internal class TokenStore(
             .forEach { storage.delete(it) }
         save(response)
     }
+
+    /**
+     * Marks the session as one from an embedded (app-native) sign-in flow, which signs the user in again by
+     * running the flow rather than in the browser. The next [save] ends the mark.
+     */
+    fun markEmbeddedSignIn() = storage.store(StoreKey.EMBEDDED_SIGN_IN, "true")
+
+    /** Whether the session came from an embedded (app-native) sign-in flow. */
+    fun isEmbeddedSignIn(): Boolean = storage.retrieve(StoreKey.EMBEDDED_SIGN_IN) == "true"
 
     fun accessToken(): String? = storage.retrieve(StoreKey.ACCESS_TOKEN)
 

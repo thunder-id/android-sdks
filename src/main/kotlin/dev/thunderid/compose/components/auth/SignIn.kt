@@ -66,6 +66,7 @@ import dev.thunderid.android.KeyValuePair
 import dev.thunderid.android.ThunderIDErrorCode
 import dev.thunderid.android.api.auth.FederatedAuthSession
 import dev.thunderid.android.api.auth.PasskeyClient
+import dev.thunderid.android.isReauthenticationByAnotherAccount
 import dev.thunderid.compose.LocalThunderID
 import dev.thunderid.compose.ThunderIDState
 import dev.thunderid.compose.components.auth.buttons.adapters.GitHubButton
@@ -92,6 +93,9 @@ import kotlinx.coroutines.launch
  */
 @Stable
 abstract class FlowStepState internal constructor() {
+    /** Receives a failure that ends a re-sign-in, such as another account signing in, from any step. */
+    internal var onReauthenticationFailure: ((Exception) -> Unit)? = null
+
     var inputs by mutableStateOf<List<FlowInput>>(emptyList())
         internal set
     var actions by mutableStateOf<List<FlowAction>>(emptyList())
@@ -317,14 +321,42 @@ fun SignIn(
     onError: ((String) -> Unit)? = null,
     organizationUnitId: String? = null,
 ) {
-    val thunderState = LocalThunderID.current
-    val i18n = thunderState.i18n
-    BaseSignIn(
+    SignInForm(
         applicationId = applicationId,
         modifier = modifier,
         onComplete = onComplete,
         onError = onError,
         organizationUnitId = organizationUnitId,
+    )
+}
+
+/**
+ * [SignIn]'s form. With [reauthentication] it signs the signed-in user in again (see
+ * [EmbeddedFlowRequestConfig.reauthentication]) within [reauthenticationMaxAge] seconds, and [onException]
+ * receives a failure that ends the flow, such as another user signing in.
+ */
+@Composable
+internal fun SignInForm(
+    applicationId: String,
+    modifier: Modifier = Modifier,
+    onComplete: (() -> Unit)? = null,
+    onError: ((String) -> Unit)? = null,
+    organizationUnitId: String? = null,
+    reauthentication: Boolean = false,
+    reauthenticationMaxAge: Int? = null,
+    onException: ((Exception) -> Unit)? = null,
+) {
+    val thunderState = LocalThunderID.current
+    val i18n = thunderState.i18n
+    BaseSignInFlow(
+        applicationId = applicationId,
+        modifier = modifier,
+        onComplete = onComplete,
+        onError = onError,
+        organizationUnitId = organizationUnitId,
+        reauthentication = reauthentication,
+        reauthenticationMaxAge = reauthenticationMaxAge,
+        onException = onException,
     ) { signInState ->
         Column(
             modifier = Modifier.padding(16.dp).exposeTestTagsAsResourceIds(),
@@ -864,11 +896,34 @@ fun BaseSignIn(
     organizationUnitId: String? = null,
     content: @Composable (SignInState) -> Unit,
 ) {
+    BaseSignInFlow(
+        applicationId = applicationId,
+        modifier = modifier,
+        onComplete = onComplete,
+        onError = onError,
+        organizationUnitId = organizationUnitId,
+        content = content,
+    )
+}
+
+@Composable
+private fun BaseSignInFlow(
+    applicationId: String,
+    modifier: Modifier = Modifier,
+    onComplete: (() -> Unit)? = null,
+    onError: ((String) -> Unit)? = null,
+    organizationUnitId: String? = null,
+    reauthentication: Boolean = false,
+    reauthenticationMaxAge: Int? = null,
+    onException: ((Exception) -> Unit)? = null,
+    content: @Composable (SignInState) -> Unit,
+) {
     val thunderState = LocalThunderID.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val signInState = remember { SignInState() }
     val passkeyClient = remember { PasskeyClient() }
+    signInState.onReauthenticationFailure = onException
     var restarts by remember { mutableIntStateOf(0) }
     signInState.flowExpiry =
         rememberFlowExpiry {
@@ -890,7 +945,8 @@ fun BaseSignIn(
                         inputs = signInState.fields(),
                         challengeToken = signInState.challengeToken,
                     )
-                val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION)
+                val request =
+                    EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, reauthentication = reauthentication)
                 val response = thunderState.client.signIn(payload = payload, request = request)
                 handleSignInResponse(
                     response,
@@ -910,6 +966,7 @@ fun BaseSignIn(
                 android.util.Log.e("SignInFlow", "Sign-in submit failed (${diagnosticLabel(e)})")
                 signInState.error = e.message
                 onError?.invoke(e.message ?: "Sign-in failed")
+                onException?.invoke(e)
             } finally {
                 signInState.isLoading = false
                 signInState.loadingActionId = null
@@ -920,7 +977,14 @@ fun BaseSignIn(
     LaunchedEffect(applicationId, organizationUnitId, restarts) {
         signInState.isLoading = true
         try {
-            val request = EmbeddedFlowRequestConfig(applicationId, FlowType.AUTHENTICATION, organizationUnitId)
+            val request =
+                EmbeddedFlowRequestConfig(
+                    applicationId,
+                    FlowType.AUTHENTICATION,
+                    organizationUnitId,
+                    reauthentication,
+                    reauthenticationMaxAge,
+                )
             val payload = EmbeddedSignInPayload(actionId = "__initiate__")
             val response = thunderState.client.signIn(payload = payload, request = request)
             android.util.Log.d(
@@ -949,6 +1013,7 @@ fun BaseSignIn(
             android.util.Log.e("SignInFlow", "Sign-in initiation failed (${diagnosticLabel(e)})")
             signInState.error = e.message
             onError?.invoke(e.message ?: "Sign-in failed")
+            onException?.invoke(e)
         } finally {
             signInState.isLoading = false
         }
@@ -1032,6 +1097,10 @@ internal suspend fun handleSignInResponse(
                     ?: "Sign-in failed"
             signInState.error = msg
             onError?.invoke(msg)
+            // An error step ends the flow, so a re-sign-in ends with it.
+            if (request.reauthentication) {
+                signInState.onReauthenticationFailure?.invoke(IAMException(ThunderIDErrorCode.AUTHENTICATION_FAILED, msg))
+            }
         }
     }
 }
@@ -1099,6 +1168,10 @@ private suspend fun performPasskeyCeremony(
         throw e
     } catch (e: Exception) {
         android.util.Log.e("SignInFlow", "Passkey ceremony failed (${diagnosticLabel(e)})")
+        if (e is IAMException && e.isReauthenticationByAnotherAccount) {
+            signInState.onReauthenticationFailure?.invoke(e)
+            return
+        }
         surfacePasskeyError(e, signInState, onError)
     }
 }
@@ -1222,6 +1295,10 @@ internal suspend fun followFederatedRedirect(
         throw e
     } catch (e: Exception) {
         android.util.Log.e("SignInFlow", "Federated redirect failed (${diagnosticLabel(e)})")
+        if (e is IAMException && e.isReauthenticationByAnotherAccount) {
+            state.onReauthenticationFailure?.invoke(e)
+            return
+        }
         val msg = e.message ?: thunderState.i18n.resolve(federatedError)
         state.error = msg
         onError?.invoke(msg)

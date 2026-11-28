@@ -15,11 +15,19 @@ data class ThunderIDHttpRequest(
 
 /**
  * The response a [ThunderIDFetcher] returns. The SDK maps non-2xx statuses to an [IAMException].
+ *
+ * @property headers Response headers, one value per name with repeated values joined by `, `. The SDK
+ *   reads `WWW-Authenticate` from a `401`; a fetcher that leaves it out still gets the challenge the
+ *   body carries.
  */
 data class ThunderIDHttpResponse(
     val statusCode: Int,
     val body: String,
-)
+    val headers: Map<String, String> = emptyMap(),
+) {
+    /** The value of the header [name], matched without regard to case. */
+    fun header(name: String): String? = headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+}
 
 /**
  * Performs an HTTP request. Supply one to route the management operations through your own transport.

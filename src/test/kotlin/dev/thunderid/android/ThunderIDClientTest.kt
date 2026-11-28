@@ -13,6 +13,7 @@ import dev.thunderid.android.backend.response
 import dev.thunderid.android.http.HttpClient
 import dev.thunderid.android.token.TokenStore
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -270,6 +271,208 @@ class ThunderIDClientTest {
         val ex = IAMException(ThunderIDErrorCode.NETWORK_ERROR, "connection refused")
         assertTrue(ex.message!!.contains("NETWORK_ERROR"))
     }
+
+    // Self-service credential change
+
+    private class RecordingFetcher(
+        var response: ThunderIDHttpResponse = ThunderIDHttpResponse(204, ""),
+    ) : ThunderIDFetcher {
+        val requests = mutableListOf<ThunderIDHttpRequest>()
+
+        override suspend fun fetch(request: ThunderIDHttpRequest): ThunderIDHttpResponse {
+            requests += request
+            return response
+        }
+    }
+
+    private suspend fun signedInClient(fetcher: ThunderIDFetcher): ThunderIDClient {
+        dev.thunderid.android.token
+            .TokenStore(storage)
+            .save(TokenResponse(accessToken = "user-token", tokenType = "Bearer", expiresIn = 3600))
+        return ThunderIDClient(fetcher).apply {
+            initialize(ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "client"), storage)
+        }
+    }
+
+    private fun bodyOf(request: ThunderIDHttpRequest): JSONObject = JSONObject(request.body!!)
+
+    @Test
+    fun `updateUserCredentials sends the name, current value and new value`() =
+        runTest {
+            val fetcher = RecordingFetcher()
+            signedInClient(fetcher).updateUserCredentials(attribute = "pin", newValue = "2468", currentValue = "1357")
+
+            val request = fetcher.requests.single()
+            assertEquals("POST", request.method)
+            assertEquals("https://localhost:8090/users/me/update-credentials", request.url)
+            val body = bodyOf(request)
+            assertEquals(setOf("name", "currentValue", "newValue"), body.keySet())
+            assertEquals("pin", body.getString("name"))
+            assertEquals("1357", body.getString("currentValue"))
+            assertEquals("2468", body.getString("newValue"))
+        }
+
+    @Test
+    fun `updateUserCredentials leaves out an empty current value`() =
+        runTest {
+            val fetcher = RecordingFetcher()
+            val client = signedInClient(fetcher)
+
+            client.updateUserCredentials(newValue = "n3wValue!")
+            client.updateUserCredentials(newValue = "n3wValue!", currentValue = "")
+
+            fetcher.requests.forEach { request ->
+                val body = bodyOf(request)
+                assertEquals(setOf("name", "newValue"), body.keySet())
+                assertEquals("password", body.getString("name"))
+                assertFalse(body.has("attributes"))
+            }
+        }
+
+    @Test
+    fun `updateUserCredentials refuses a blank name or new value without sending anything`() =
+        runTest {
+            val fetcher = RecordingFetcher()
+            val client = signedInClient(fetcher)
+
+            for ((attribute, newValue) in listOf(" " to "n3wValue!", "password" to "")) {
+                try {
+                    client.updateUserCredentials(attribute = attribute, newValue = newValue, currentValue = "0ldValue!")
+                    fail("Expected IAMException")
+                } catch (e: IAMException) {
+                    assertEquals(ThunderIDErrorCode.INVALID_INPUT, e.code)
+                }
+            }
+            assertTrue(fetcher.requests.isEmpty())
+        }
+
+    @Test
+    fun `updateUserCredentials carries the server's code and message`() =
+        runTest {
+            val body =
+                """
+                {"code":"USR-1048",
+                 "message":{"key":"error.userservice.invalid_current_credential","defaultValue":"Invalid current credential"},
+                 "description":{"defaultValue":"The current value does not match the credential"}}
+                """.trimIndent()
+            val client = signedInClient(RecordingFetcher(ThunderIDHttpResponse(403, body)))
+
+            try {
+                client.updateUserCredentials(newValue = "n3wValue!", currentValue = "wrong")
+                fail("Expected IAMException")
+            } catch (e: IAMException) {
+                assertEquals(ThunderIDErrorCode.FORBIDDEN, e.code)
+                assertEquals("USR-1048", e.serverError?.code)
+                assertEquals("[FORBIDDEN] Invalid current credential", e.message)
+                assertNull(e.authenticationChallenge)
+            }
+        }
+
+    private val stepUpBody =
+        """
+        {"code":"AUTH-4011",
+         "message":{"defaultValue":"Recent authentication required"},
+         "description":{"defaultValue":"Authenticate again","params":{"maxAge":"300"}}}
+        """.trimIndent()
+
+    private val stepUpHeader =
+        "Bearer error=\"insufficient_user_authentication\", " +
+            "error_description=\"A more recent authentication is required\", max_age=\"120\""
+
+    private suspend fun stepUpError(call: suspend () -> Unit): IAMException {
+        try {
+            call()
+        } catch (e: IAMException) {
+            return e
+        }
+        throw AssertionError("Expected IAMException")
+    }
+
+    @Test
+    fun `a credential or profile change refused for an old sign-in is STEP_UP_REQUIRED with the header's max age`() =
+        runTest {
+            val fetcher = RecordingFetcher(ThunderIDHttpResponse(401, stepUpBody, mapOf("www-authenticate" to stepUpHeader)))
+            val client = signedInClient(fetcher)
+            val calls =
+                listOf<suspend () -> Unit>(
+                    { client.updateUserCredentials(newValue = "n3wValue!") },
+                    { client.updateUserProfile(mapOf("email" to "new@example.com")) },
+                )
+
+            for (call in calls) {
+                val error = stepUpError(call)
+                assertEquals(ThunderIDErrorCode.STEP_UP_REQUIRED, error.code)
+                assertEquals("[STEP_UP_REQUIRED] Recent authentication required", error.message)
+                assertEquals(
+                    AuthenticationChallenge(
+                        error = "insufficient_user_authentication",
+                        errorDescription = "A more recent authentication is required",
+                        maxAge = 120,
+                    ),
+                    error.authenticationChallenge,
+                )
+            }
+            // One request each: the call does not sign in again, refresh or retry.
+            assertEquals(listOf("POST", "PUT"), fetcher.requests.map { it.method })
+        }
+
+    @Test
+    fun `without the header the body's AUTH-4011 makes it STEP_UP_REQUIRED with the body's max age`() =
+        runTest {
+            val fetcher = RecordingFetcher(ThunderIDHttpResponse(401, stepUpBody))
+            val client = signedInClient(fetcher)
+            val calls =
+                listOf<suspend () -> Unit>(
+                    { client.updateUserCredentials(newValue = "n3wValue!") },
+                    { client.updateUserProfile(mapOf("mobile" to "+94771111111")) },
+                )
+
+            for (call in calls) {
+                val error = stepUpError(call)
+                assertEquals(ThunderIDErrorCode.STEP_UP_REQUIRED, error.code)
+                assertEquals(
+                    AuthenticationChallenge(error = "insufficient_user_authentication", maxAge = 300),
+                    error.authenticationChallenge,
+                )
+            }
+            assertEquals(2, fetcher.requests.size)
+        }
+
+    @Test
+    fun `a 401 that asks for no recent sign-in stays AUTHENTICATION_FAILED`() =
+        runTest {
+            val body = """{"code":"AUTH-4010","message":{"defaultValue":"Unauthorized"}}"""
+            val header = "Bearer error=\"invalid_token\""
+            val client = signedInClient(RecordingFetcher(ThunderIDHttpResponse(401, body, mapOf("WWW-Authenticate" to header))))
+
+            val error = stepUpError { client.updateUserProfile(mapOf("email" to "new@example.com")) }
+
+            assertEquals(ThunderIDErrorCode.AUTHENTICATION_FAILED, error.code)
+            assertNull(error.authenticationChallenge)
+        }
+
+    @Test
+    fun `sign-in options send max_age and extra parameters without overriding the SDK's own`() =
+        runTest {
+            client.initialize(
+                ThunderIDConfig(baseUrl = "https://localhost:8090", clientId = "app", afterSignInUrl = "com.example.app://callback"),
+                storage,
+            )
+
+            val url =
+                client.buildSignInUrl(
+                    SignInOptions(maxAge = 300, extra = mapOf("id_token_hint" to "hint", "client_id" to "other", "ui_locales" to "fr")),
+                )
+
+            val query =
+                url.substringAfter('?').split('&').associate {
+                    it.substringBefore('=') to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8")
+                }
+            assertEquals("300", query["max_age"])
+            assertEquals("hint", query["id_token_hint"])
+            assertEquals("fr", query["ui_locales"])
+            assertEquals("app", query["client_id"])
+        }
 
     @Test
     fun `flow submit body uses action field`() {
